@@ -1,0 +1,31 @@
+{
+  "name": "nodejsreporter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/pnlReporterService.js",
+    "dev": "ts-node src/pnlReporterService.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.4",
+    "@types/axios": "^0.14.0",
+    "@types/cron": "^2.4.0",
+    "axios": "^1.7.5",
+    "axios-retry": "^4.5.0",
+    "cron": "^3.1.7",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.33.0",
+    "ethers": "^6.13.2",
+    "postgres": "^3.4.4"
+  }
+}

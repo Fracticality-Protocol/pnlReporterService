@@ -9,7 +9,7 @@ import { env } from './env'
 const pnlReporter = new FractalityPnlReporter(
   env,
   FractalityV2VaultABI.abi,
-  OperationMode.PULL,
+  OperationMode.PUSH,
   KeyMode.KMS
 )
 

@@ -1,21 +1,33 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
+import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from './schema'
 
-console.log(process.env.DB_HOST)
+let db:PostgresJsDatabase<typeof schema>|null=null;
 
-const connection = postgres({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT || 5432),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  ssl: 'prefer'
-})
+export async function initializeDatabaseConnection(): Promise<PostgresJsDatabase<typeof schema>> {
+    const connection = postgres({
+        host: process.env.DB_HOST,
+        port: Number(process.env.DB_PORT || 5432),
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+        ssl: 'prefer'
+      })
+      db=drizzle(connection, { schema });
+      console.log("database connection initialized")   
+      return db;
+}
 
-export const db = drizzle(connection, { schema })
+export type PnlReporterData = typeof schema.pnlReporterData.$inferSelect;
+
+//export const db = drizzle(connection, { schema })
 
 export const updatePnlReporterData = async (previousContractWriteTimeStamp: number, previousProcessedNav: number, previousProcessedNavTimeStamp: number) => {
+
+    if(!db) {
+        throw new Error('Database not initialized');
+    }
+
     await db.insert(schema.pnlReporterData).values({
       id: 'singleton',
       previousContractWriteTimeStamp: previousContractWriteTimeStamp,
@@ -31,7 +43,9 @@ export const updatePnlReporterData = async (previousContractWriteTimeStamp: numb
     })
   }
 
-
   export const getPnlReporterData = async () => {
+    if(!db) {
+        throw new Error('Database not initialized');
+    }
     return await db.query.pnlReporterData.findFirst()
   }

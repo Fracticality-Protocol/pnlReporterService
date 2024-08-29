@@ -18,4 +18,4 @@ Note: no writing to the contract will happen if the nav hasn't changed at all.
 # TODO
 - Turn this service into a lambda function compatible with AWS Lambda.
 - Remove the cronjob and have the NAV data be pushed to the service via AWS events.
-- Have the private key come from AWS KMS, not from the environment variables.
+- Have the private key come from AWS KMS, not from the environment variables. (already set up, but not tested)

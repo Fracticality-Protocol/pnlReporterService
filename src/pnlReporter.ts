@@ -229,6 +229,7 @@ export class FractalityPnlReporter {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
 
+    console.log('init axios')
     axiosRetry(axios, {
       retries: 5,
       retryDelay: axiosRetry.exponentialDelay,
@@ -238,6 +239,7 @@ export class FractalityPnlReporter {
     })
     this.#client = axios.create()
 
+    console.log('getPnlReporterData')
     const pnlReporterData = await getPnlReporterData()
 
     if (!pnlReporterData) {
@@ -313,6 +315,9 @@ export class FractalityPnlReporter {
     if (!useKMS) {
       signer = new ethers.Wallet(this.#PRIVATE_KEY!, provider)
     } else {
+      console.log(this.#AWS_KMS_KEY_ID!)
+      console.log(this.#AWS_REGION!)
+      console.log(this.#AWS_ACCESS_KEY_ID!)
       signer = new AwsKmsSigner({
         keyId: this.#AWS_KMS_KEY_ID!,
         region: this.#AWS_REGION!,
@@ -323,7 +328,6 @@ export class FractalityPnlReporter {
       })
       signer = signer.connect(provider)
     }
-
     const contract = new ethers.Contract(this.VAULT_ADDRESS, this.FRACTALITY_V2_VAULT_ABI, signer)
     console.log('connected to blockchain')
     const assetAddress = await contract.asset()

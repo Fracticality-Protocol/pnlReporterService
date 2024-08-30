@@ -18,6 +18,7 @@ export const handler: Handler<void, MainServiceJobResults | void> = async (
   event,
   context: Context
 ): Promise<MainServiceJobResults | void> => {
+  console.log(event)
   try {
     return await pnlReporter.initialize()
   } catch (error) {

@@ -5,6 +5,7 @@ resource "aws_lambda_function" "default" {
   role             = aws_iam_role.default.arn
   filename         = "${path.module}/../dist/bundle.zip"
   source_code_hash = filebase64sha256("${path.module}/../dist/bundle.zip")
+  timeout          = 300
 
   environment {
     variables = {

@@ -1,6 +1,7 @@
 import { integer, text, pgSchema } from 'drizzle-orm/pg-core'
+import { env } from '../env'
 
-export const schema = pgSchema(process.env.DB_SCHEMA || 'test')
+export const schema = pgSchema(env.DB_SCHEMA || 'test')
 
 export const pnlReporterData = schema.table('pnl_reporter_data', {
   id: text('id').primaryKey().default('singleton'),

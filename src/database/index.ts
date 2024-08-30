@@ -1,16 +1,18 @@
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+
 import * as schema from './schema'
+import { env } from '../env'
 
 let db: PostgresJsDatabase<typeof schema> | null = null
 
 export async function initializeDatabaseConnection(): Promise<PostgresJsDatabase<typeof schema>> {
   const connection = postgres({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 5432),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: env.DB_HOST,
+    port: Number(env.DB_PORT || 5432),
+    user: env.DB_USER,
+    password: env.DB_PASSWORD,
+    database: env.DB_NAME,
     ssl: 'prefer'
   })
   db = drizzle(connection, { schema })

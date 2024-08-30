@@ -5,27 +5,26 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/runPullService.js",
-    "dev": "ts-node src/runPullService.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "dotenv -- node dist/run.js",
+    "dev": "dotenv -- ts-node src/run.ts"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@smithy/types": "^3.3.0",
+    "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.5.0",
+    "dotenv-cli": "^7.4.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
   },
   "dependencies": {
     "@cuonghx.gu-tech/ethers-aws-kms-signer": "^0.9.1",
-    "@neondatabase/serverless": "^0.9.4",
     "@types/axios": "^0.14.0",
     "@types/cron": "^2.4.0",
     "axios": "^1.7.5",
     "axios-retry": "^4.5.0",
     "cron": "^3.1.7",
-    "dotenv": "^16.4.5",
     "drizzle-orm": "^0.33.0",
     "ethers": "^6.13.2",
     "postgres": "^3.4.4",

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { KeyMode, OperationMode } from './modes'
 
 const envSchema = z
   .object({
@@ -9,10 +10,18 @@ const envSchema = z
     VAULT_ADDRESS: z.string(),
     RPC_URL: z.string().url(),
     PRIVATE_KEY: z.string().optional(),
+    DB_HOST: z.string(),
+    DB_USER: z.string(),
+    DB_PASSWORD: z.string(),
+    DB_NAME: z.string(),
+    DB_PORT: z.string().optional(),
+    DB_SCHEMA: z.string().optional(),
     AWS_REGION: z.string().optional(),
     AWS_KMS_KEY_ID: z.string().optional(),
     AWS_ACCESS_KEY_ID: z.string().optional(),
-    AWS_SECRET_ACCESS_KEY: z.string().optional()
+    AWS_SECRET_ACCESS_KEY: z.string().optional(),
+    OPERATION_MODE: z.nativeEnum(OperationMode).default(OperationMode.PULL),
+    KEY_MODE: z.nativeEnum(KeyMode).default(KeyMode.KMS)
   })
   .refine((data) => data.PRIVATE_KEY || data.AWS_KMS_KEY_ID, {
     message: 'Either PRIVATE_KEY or AWS_KMS_KEY_ID must be set',
@@ -35,7 +44,6 @@ const envSchema = z
 const parsedEnv = envSchema.safeParse(process.env)
 
 if (!parsedEnv.success) {
-  // Extract and format the errors
   const formattedErrors = parsedEnv.error.errors.map((err) => ({
     path: err.path.join('.'),
     message: err.message

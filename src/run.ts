@@ -1,16 +1,13 @@
-import { FractalityPnlReporter, KeyMode, OperationMode } from './pnlReporter'
+import { FractalityPnlReporter } from './pnlReporter'
 import FractalityV2VaultABI from '../contracts/FractalityV2Vault.json'
-import dotenv from 'dotenv'
-
-dotenv.config()
 
 import { env } from './env'
 
 const pnlReporter = new FractalityPnlReporter(
   env,
   FractalityV2VaultABI.abi,
-  OperationMode.PULL,
-  KeyMode.KMS
+  env.OPERATION_MODE,
+  env.KEY_MODE
 )
 
 async function main() {

@@ -1,17 +1,18 @@
 import { ethers } from 'ethers'
 import { AwsKmsSigner } from '@cuonghx.gu-tech/ethers-aws-kms-signer'
+import axios from 'axios'
+import { type AxiosInstance } from 'axios'
+import { CronJob } from 'cron'
+import axiosRetry from 'axios-retry'
+
 import {
   updatePnlReporterData,
   getPnlReporterData,
   PnlReporterData,
   initializeDatabaseConnection
 } from './database'
-import axios from 'axios'
-import { AxiosInstance } from 'axios'
-import { CronJob } from 'cron'
-
-import axiosRetry from 'axios-retry'
-import { ReporterEnv } from './env'
+import { type ReporterEnv } from './env'
+import { KeyMode, OperationMode } from './modes'
 
 interface NavDataFromApi {
   nav: number //string representation of a floating point number
@@ -25,21 +26,12 @@ interface BlockchainConnection {
   assetDecimals: BigInt
 }
 
-export enum OperationMode {
-  PUSH = 'push',
-  PULL = 'pull'
-}
-
-export enum KeyMode {
-  PRIVATE_KEY,
-  KMS
-}
-
 export class FractalityPnlReporter {
   #GET_NAV_URL: string
   #API_KEY: string
-  VAULT_ADDRESS: string
   #RPC_URL: string
+
+  VAULT_ADDRESS: string
   TIME_PERIOD_FOR_CONTRACT_WRITE: number //seconds
   PERCENTAGE_TRIGGER_CHANGE: number
   FRACTALITY_V2_VAULT_ABI: ethers.InterfaceAbi
@@ -65,8 +57,8 @@ export class FractalityPnlReporter {
   ) {
     this.#GET_NAV_URL = _ENV.GET_NAV_URL
     this.#API_KEY = _ENV.API_KEY
-    this.VAULT_ADDRESS = _ENV.VAULT_ADDRESS
     this.#RPC_URL = _ENV.RPC_URL
+    this.VAULT_ADDRESS = _ENV.VAULT_ADDRESS
     this.TIME_PERIOD_FOR_CONTRACT_WRITE = _ENV.TIME_PERIOD_FOR_CONTRACT_WRITE
     this.PERCENTAGE_TRIGGER_CHANGE = _ENV.PERCENTAGE_TRIGGER_CHANGE
     this.FRACTALITY_V2_VAULT_ABI = _FRACTALITY_V2_VAULT_ABI
@@ -158,12 +150,10 @@ export class FractalityPnlReporter {
       parseFloat(pnlReporterData.previousProcessedNav as string)
     )
 
-    console.log('old nav')
-    console.log(pnlReporterData.previousProcessedNav)
-    console.log('new nav')
-    console.log(newNavData.nav)
-    console.log('percentageChange', percentageChange)
-    console.log('delta', delta)
+    console.log('old nav: ', pnlReporterData.previousProcessedNav)
+    console.log('new nav: ', newNavData.nav)
+    console.log('percentageChange: ', percentageChange)
+    console.log('delta: ', delta)
 
     //BUSINESS LOGIC - logic to write to contract
     //if percentageTriggerChange is reached, in either direction, write detla to contract
@@ -238,7 +228,7 @@ export class FractalityPnlReporter {
 
     if (this.OPERATION_MODE === OperationMode.PULL) {
       this.#job = new CronJob(
-        '* * * * *', // Cron expression: Run every minute
+        '*/10 * * * *', // Cron expression: Run every minute
         this._jobRunner, // Function to execute
         null, // onComplete function (null if not needed)
         false, // Start the job right now

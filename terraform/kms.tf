@@ -1,3 +1,3 @@
 data "aws_kms_key" "testnet" {
-  key_id = "TEST_PNL_REPORTER"
+  key_id = "alias/TEST_PNL_REPORTER"
 }

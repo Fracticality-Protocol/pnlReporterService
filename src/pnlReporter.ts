@@ -176,7 +176,7 @@ export class FractalityPnlReporter {
 
     //calculate the percentage change and delta
     const percentageChange = await this._calculatePercentageChange(newNavData, pnlReporterData)
-    const delta = await this._calculateDelta(
+    const delta = this._calculateDelta(
       newNavData.nav,
       parseFloat(pnlReporterData.previousProcessedNav as string)
     )

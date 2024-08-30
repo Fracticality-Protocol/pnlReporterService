@@ -58,8 +58,6 @@ export class FractalityPnlReporter {
   #PRIVATE_KEY?: string
   #AWS_KMS_KEY_ID?: string
   #AWS_REGION?: string
-  #AWS_ACCESS_KEY_ID?: string
-  #AWS_SECRET_ACCESS_KEY?: string
 
   OPERATION_MODE: OperationMode
   KEY_MODE: KeyMode
@@ -93,8 +91,6 @@ export class FractalityPnlReporter {
     } else if (this.KEY_MODE === KeyMode.KMS) {
       this.#AWS_KMS_KEY_ID = _ENV.AWS_KMS_KEY_ID
       this.#AWS_REGION = _ENV.AWS_REGION
-      this.#AWS_ACCESS_KEY_ID = _ENV.AWS_ACCESS_KEY_ID
-      this.#AWS_SECRET_ACCESS_KEY = _ENV.AWS_SECRET_ACCESS_KEY
     } else {
       throw Error(`Invalid KeyMode ${this.KEY_MODE}`)
     }
@@ -225,23 +221,26 @@ export class FractalityPnlReporter {
     } as MainServiceJobResults
   }
 
-  async initialize(): Promise<MainServiceJobResults | void> {
+  async initialize(navData?: NavDataFromApi): Promise<MainServiceJobResults | void> {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
 
-    axiosRetry(axios, {
-      retries: 5,
-      retryDelay: axiosRetry.exponentialDelay,
-      onRetry: (retryCount, error) => {
-        console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
-      }
-    })
-    this.#client = axios.create()
+    if (!navData) {
+      console.log('No nav data event deteced fetching nav directly')
+      axiosRetry(axios, {
+        retries: 5,
+        retryDelay: axiosRetry.exponentialDelay,
+        onRetry: (retryCount, error) => {
+          console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
+        }
+      })
+      this.#client = axios.create()
+    }
 
     const pnlReporterData = await getPnlReporterData()
 
     if (!pnlReporterData) {
-      const initNavData = await this._getNavData()
+      const initNavData = navData ? navData : await this._getNavData()
 
       //0 previousContractWriteTimeStamp because this is the first time the service is being run
       await updatePnlReporterData(0, initNavData.nav, initNavData.timestamp)
@@ -257,7 +256,7 @@ export class FractalityPnlReporter {
       this.#job = new CronJob(
         '*/10 * * * *', // Cron expression: Run every minute
         () => {
-          this._jobRunner()
+          this._jobRunner(navData)
         }, // Function to execute
         null, // onComplete function (null if not needed)
         false, // Start the job right now
@@ -267,19 +266,18 @@ export class FractalityPnlReporter {
       console.info('Job scheduler started - running pull service')
     } else {
       console.info('Job started - running push service')
-      return await this._jobRunner()
+      return await this._jobRunner(navData)
     }
   }
 
-  _jobRunner = async (): Promise<MainServiceJobResults | void> => {
+  _jobRunner = async (navData?: NavDataFromApi): Promise<MainServiceJobResults | void> => {
     try {
-      const newNavData = await this._getNavData()
+      const newNavData = navData ? navData : await this._getNavData()
       const results = await this.mainService(newNavData)
-      console.log('job results')
       console.log(results)
       return results
     } catch (error) {
-      console.error('Job failed', { error })
+      console.error('Job failed - ', { error })
     }
   }
 
@@ -315,16 +313,15 @@ export class FractalityPnlReporter {
     if (!useKMS) {
       signer = new ethers.Wallet(this.#PRIVATE_KEY!, provider)
     } else {
-      console.log(this.#AWS_KMS_KEY_ID!)
-      console.log(this.#AWS_REGION!)
-      console.log(this.#AWS_ACCESS_KEY_ID!)
       signer = new AwsKmsSigner({
         keyId: this.#AWS_KMS_KEY_ID!,
         region: this.#AWS_REGION!
       })
       signer = signer.connect(provider)
     }
+
     const contract = new ethers.Contract(this.VAULT_ADDRESS, this.FRACTALITY_V2_VAULT_ABI, signer)
+
     console.log('connected to blockchain')
 
     const assetAddress = await contract.asset()
@@ -334,6 +331,7 @@ export class FractalityPnlReporter {
       ['function decimals() view returns (uint8)'],
       signer
     )
+
     const assetDecimals = await assetContract.decimals()
 
     return { contract, signer, provider, assetDecimals: assetDecimals }

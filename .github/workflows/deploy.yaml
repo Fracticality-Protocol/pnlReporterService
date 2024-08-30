@@ -62,7 +62,9 @@ jobs:
             -var="project_version=${{ env.PROJECT_VERSION }}" \
             -var="rpc_url=${{ vars.RPC_URL }}" \
             -var="vault_address=${{ vars.VAULT_ADDRESS }}" \
-            -var="fund_db_nav_endpoint=${{ vars.FUND_DB_NAV_ENDPOINT }}"
+            -var="fund_db_nav_endpoint=${{ vars.FUND_DB_NAV_ENDPOINT }}" \
+            -var="db_name=${{ vars.DB_NAME }}" \
+            -var="db_instance_id=${{ vars.DB_INSTANCE_ID }}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

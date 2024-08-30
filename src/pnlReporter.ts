@@ -331,13 +331,14 @@ export class FractalityPnlReporter {
     const contract = new ethers.Contract(this.VAULT_ADDRESS, this.FRACTALITY_V2_VAULT_ABI, signer)
     console.log('connected to blockchain')
     const assetAddress = await contract.asset()
-
+    console.log('contract')
     const assetContract = new ethers.Contract(
       assetAddress,
       ['function decimals() view returns (uint8)'],
       signer
     )
     const assetDecimals = await assetContract.decimals()
+    console.log('decimals ', assetDecimals)
 
     return { contract, signer, provider, assetDecimals: assetDecimals }
   }

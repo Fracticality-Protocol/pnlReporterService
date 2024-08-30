@@ -16,7 +16,7 @@ data "aws_secretsmanager_secret" "endpoint" {
   name = "FUND_DATA_INTERNAL_KEY"
 }
 
-data "aws_secretsmanager_secret_version" "db" {
-  secret_id = data.aws_secretsmanager_secret.db.id
+data "aws_secretsmanager_secret_version" "endpoint" {
+  secret_id = data.aws_secretsmanager_secret.endpoint.id
 }
 

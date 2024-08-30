@@ -7,7 +7,7 @@ import { CronJob } from 'cron';
 
 import axiosRetry from 'axios-retry';
 
-interface NavDataFromApi {
+export interface NavDataFromApi {
     nav: number;//string representation of a floating point number
     timestamp: number; //timestamp (seconds)
 }
@@ -28,14 +28,32 @@ interface KmsCredentials {
     };
 }
 
-enum OperationMode {
+export enum OperationMode {
     PUSH = 'push',
     PULL = 'pull'
 }
 
+export enum MainServiceJobResultsCode {
+    DELTA_ZERO_NO_WRITE = "delta is zero - not writing to contract",
+    PERCENTAGE_CHANGE_THRESHOLD_REACHED = "percentage change threshold reached - writing to contract",
+    TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE = "time since last contract write threshold reached - writing to contract",
+    NO_TRIGGER_NO_WRITE = "delta is not zero, percentage change threshold not reached, and time since last contract write threshold not reached",
+}
+
+export interface MainServiceJobResults {
+    delta: number,
+    percentageChange: number,
+    txResults: WriteToContractResults | null
+    code: string
+}
+
+export interface WriteToContractResults {
+    txTimestamp: number
+    hash: string
+}
+
 
 export class FractalityPnlReporter {
-
 
     #GET_NAV_URL: string;
     #API_KEY: string;
@@ -80,7 +98,7 @@ export class FractalityPnlReporter {
     }
 
 
-    _writeToContract = async (delta: number): Promise<number> => {
+    _writeToContract = async (delta: number): Promise<WriteToContractResults> => {
         if (!this.blockchainConnection) throw new Error("Blockchain connection not initialized");
 
         console.log("writing to contract");
@@ -106,13 +124,25 @@ export class FractalityPnlReporter {
 
         console.log("tx hash", receipt.hash);
         const block = await this.blockchainConnection.provider.getBlock(receipt.blockNumber);
-        return block?.timestamp as number;
+
+        return {
+            txTimestamp: block?.timestamp as number,
+            hash: receipt.hash
+        }
     }
 
 
     //This should be compatible with both push and pull modes.
-    _mainService = async (newNavData: NavDataFromApi): Promise<void> => {
-
+    //BUSINESS LOGIC - logic to write to contract
+    //if percentageTriggerChange is reached, in either direction, write detla to contract
+    //else, check if previousContractWriteTimeStamp is set.
+    //if it's not set, write detla to contract
+    //if it is set, check to see if the time difference between now and previousContractWriteTimeStamp is 10 minutes or greater.
+    //if it is, write delta to contract
+    //write current timestamp to previousContractWriteTimeStamp
+    //if it's not, do nothing
+    mainService = async (newNavData: NavDataFromApi): Promise<MainServiceJobResults> => {
+        let code: MainServiceJobResultsCode = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE;
         this._drawLogo()
 
         //get the previous nav data from the database
@@ -124,45 +154,34 @@ export class FractalityPnlReporter {
 
         //calculate the percentage change and delta
         const percentageChange = await this._calculatePercentageChange(newNavData, pnlReporterData);
-
         const delta = await this._calculateDelta(newNavData.nav, parseFloat(pnlReporterData.previousProcessedNav as string));
 
-        console.log("old nav");
-        console.log(pnlReporterData.previousProcessedNav);
-        console.log("new nav");
-        console.log(newNavData.nav);
-        console.log("percentageChange", percentageChange);
-        console.log("delta", delta);
-
-        //BUSINESS LOGIC - logic to write to contract
-        //if percentageTriggerChange is reached, in either direction, write detla to contract
-        //else, check if previousContractWriteTimeStamp is set.
-        //if it's not set, write detla to contract
-        //if it is set, check to see if the time difference between now and previousContractWriteTimeStamp is 10 minutes or greater.
-        //if it is, write delta to contract
-        //write current timestamp to previousContractWriteTimeStamp
-        //if it's not, do nothing
-
         let txTimestamp = pnlReporterData?.previousContractWriteTimeStamp as number;
+        let txResults: WriteToContractResults | null = null;
 
         if (delta === 0) {
-            console.log("delta is zero - no action taken");
+            code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
+            console.log(code);
         } else {
 
             let shouldUpdateContract: boolean = false;
 
             if (Math.abs(percentageChange) >= this.PERCENTAGE_TRIGGER_CHANGE) {
+                code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
                 shouldUpdateContract = true;
-            }
-            const timeSinceLastContractWrite = new Date().getTime() - (pnlReporterData?.previousContractWriteTimeStamp as number);
-            if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
-                shouldUpdateContract = true;
+            } else {
+                const timeSinceLastContractWrite = new Date().getTime() - (pnlReporterData?.previousContractWriteTimeStamp as number);
+                if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
+                    code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
+                    shouldUpdateContract = true;
+                }
             }
 
             if (shouldUpdateContract) {
-                txTimestamp = await this._writeToContract(delta);
+                txResults = await this._writeToContract(delta);
+                txTimestamp = txResults.txTimestamp;
             } else {
-                console.log("not enough time has passed since last contract write, nor is the percentage change threshold reached");
+                code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
             }
         }
 
@@ -171,12 +190,19 @@ export class FractalityPnlReporter {
         await updatePnlReporterData(txTimestamp, newNavData.nav, newNavData.timestamp);
         console.log("finished job");
 
+
+        return {
+            delta: delta,
+            percentageChange: percentageChange,
+            txResults: txResults,
+            code: code
+        } as MainServiceJobResults
+
     }
 
     async initialize() {
         await initializeDatabaseConnection();
-        this.blockchainConnection = await this._initBlockchainConnection();
-
+        this.blockchainConnection = await this._initBlockchainConnection(this.#kmsCredentials ? true : false);
 
         axiosRetry(axios, {
             retries: 5, retryDelay: axiosRetry.exponentialDelay, onRetry: (retryCount, error) => {
@@ -212,8 +238,7 @@ export class FractalityPnlReporter {
             this.#job.start();
             console.info('Job scheduler started - running pull service');
         } else {
-            //TODO: implement push mode where events are pushed to the service via AWS events.
-            throw new Error("Operation mode not supported yet");
+            console.info('Running in push mode, NAV data needs to be pushed to the service.');
         }
     }
 
@@ -229,7 +254,9 @@ export class FractalityPnlReporter {
     _jobRunner = async (): Promise<void> => {
         try {
             const newNavData = await this._getNavData();
-            await this._mainService(newNavData);
+            const results = await this.mainService(newNavData);
+            console.log("job results")
+            console.log(results);
         } catch (error) {
             console.error('Job failed', { error });
         }

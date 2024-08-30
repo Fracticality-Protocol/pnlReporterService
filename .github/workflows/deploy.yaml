@@ -11,7 +11,7 @@ on:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/deploy-infra')
     runs-on: ubuntu-latest
     strategy:
       matrix:

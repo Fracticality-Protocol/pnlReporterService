@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+
+    env:
+      DESTINATION_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config="environments/${{ env.DESTINATION_BRANCH }}.backend.tfvars"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        working-directory: ./terraform
+
+      - name: Set Version
+        if: github.ref == 'refs/heads/main'
+        run: echo "PROJECT_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+
+      - name: Terraform Deploy
+        run: |
+          terraform apply -auto-approve \
+            -var-file="environments/${{ env.DESTINATION_BRANCH }}.tfvars" \
+            -var="account_id=${{ vars.AWS_ACCOUNT_ID }}" \
+            -var="region=${{ vars.AWS_REGION }}" \
+            -var="project_version=${{ env.PROJECT_VERSION }}" \
+            -var="rpc_url=${{ vars.RPC_URL }}" \
+            -var="vault_address=${{ vars.VAULT_ADDRESS }}" \
+            -var="fund_db_nav_endpoint=${{ vars.FUND_DB_NAV_ENDPOINT }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        working-directory: ./terraform

@@ -12,7 +12,7 @@ resource "aws_lambda_function" "default" {
       VAULT_ADDRESS                  = var.vault_address
       DB_USER                        = local.db_username
       DB_PASSWORD                    = local.db_password
-      DB_HOST                        = var.db_host
+      DB_HOST                        = aws_db_instance.db.address
       DB_NAME                        = var.db_name
       GET_NAV_URL                    = var.fund_db_nav_endpoint
       API_KEY                        = data.aws_secretsmanager_secret_version.endpoint.secret_string

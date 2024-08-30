@@ -24,11 +24,11 @@ variable "project_version" {
   type = string
 }
 
-variable "db_host" {
+variable "db_name" {
   type = string
 }
 
-variable "db_name" {
+variable "db_instance_id" {
   type = string
 }
 

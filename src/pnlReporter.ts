@@ -225,11 +225,10 @@ export class FractalityPnlReporter {
     } as MainServiceJobResults
   }
 
-  async initialize() {
+  async initialize(): Promise<MainServiceJobResults | void> {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
 
-    console.log('init axios')
     axiosRetry(axios, {
       retries: 5,
       retryDelay: axiosRetry.exponentialDelay,
@@ -239,7 +238,6 @@ export class FractalityPnlReporter {
     })
     this.#client = axios.create()
 
-    console.log('getPnlReporterData')
     const pnlReporterData = await getPnlReporterData()
 
     if (!pnlReporterData) {
@@ -258,7 +256,9 @@ export class FractalityPnlReporter {
     if (this.OPERATION_MODE === OperationMode.PULL) {
       this.#job = new CronJob(
         '*/10 * * * *', // Cron expression: Run every minute
-        this._jobRunner, // Function to execute
+        () => {
+          this._jobRunner()
+        }, // Function to execute
         null, // onComplete function (null if not needed)
         false, // Start the job right now
         'UTC' // Time zone
@@ -267,17 +267,17 @@ export class FractalityPnlReporter {
       console.info('Job scheduler started - running pull service')
     } else {
       console.info('Job started - running push service')
-      await this._jobRunner()
-      process.exit(0)
+      return await this._jobRunner()
     }
   }
 
-  _jobRunner = async (): Promise<void> => {
+  _jobRunner = async (): Promise<MainServiceJobResults | void> => {
     try {
       const newNavData = await this._getNavData()
       const results = await this.mainService(newNavData)
       console.log('job results')
       console.log(results)
+      return results
     } catch (error) {
       console.error('Job failed', { error })
     }
@@ -321,24 +321,20 @@ export class FractalityPnlReporter {
       signer = new AwsKmsSigner({
         keyId: this.#AWS_KMS_KEY_ID!,
         region: this.#AWS_REGION!
-        // credentials: {
-        //   accessKeyId: this.#AWS_ACCESS_KEY_ID!,
-        //   secretAccessKey: this.#AWS_SECRET_ACCESS_KEY!
-        // }
       })
       signer = signer.connect(provider)
     }
     const contract = new ethers.Contract(this.VAULT_ADDRESS, this.FRACTALITY_V2_VAULT_ABI, signer)
     console.log('connected to blockchain')
+
     const assetAddress = await contract.asset()
-    console.log('contract')
+
     const assetContract = new ethers.Contract(
       assetAddress,
       ['function decimals() view returns (uint8)'],
       signer
     )
     const assetDecimals = await assetContract.decimals()
-    console.log('decimals ', assetDecimals)
 
     return { contract, signer, provider, assetDecimals: assetDecimals }
   }

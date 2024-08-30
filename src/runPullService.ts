@@ -57,10 +57,14 @@ function _parseEnvVars() {
         API_KEY = process.env.API_KEY;
     }
 
-    if (!process.env?.VAULT_ADDRESS) {
+    if (!process.env?.VAULT_ADDRESS && !process.env?.TEST_VAULT_ADDRESS ) {
         throw new Error('VAULT_ADDRESS is not set');
     } else {
-        VAULT_ADDRESS = process.env.VAULT_ADDRESS;
+        if(process.env.UNIT_TEST_MODE){
+            VAULT_ADDRESS = process.env.TEST_VAULT_ADDRESS as string;
+        }else{
+            VAULT_ADDRESS = process.env.VAULT_ADDRESS as string;
+        }        
     }
 
     if (!process.env?.PRIVATE_KEY) {

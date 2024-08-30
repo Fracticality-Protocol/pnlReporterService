@@ -10,7 +10,7 @@ declare module '@cuonghx.gu-tech/ethers-aws-kms-signer' {
   } from 'ethers'
 
   export type EthersAwsKmsSignerConfig = {
-    credentials: AwsCredentialIdentityProvider | AwsCredentialIdentity
+    // credentials: AwsCredentialIdentityProvider | AwsCredentialIdentity
     region: string
     keyId: string
   }

@@ -320,11 +320,11 @@ export class FractalityPnlReporter {
       console.log(this.#AWS_ACCESS_KEY_ID!)
       signer = new AwsKmsSigner({
         keyId: this.#AWS_KMS_KEY_ID!,
-        region: this.#AWS_REGION!,
-        credentials: {
-          accessKeyId: this.#AWS_ACCESS_KEY_ID!,
-          secretAccessKey: this.#AWS_SECRET_ACCESS_KEY!
-        }
+        region: this.#AWS_REGION!
+        // credentials: {
+        //   accessKeyId: this.#AWS_ACCESS_KEY_ID!,
+        //   secretAccessKey: this.#AWS_SECRET_ACCESS_KEY!
+        // }
       })
       signer = signer.connect(provider)
     }

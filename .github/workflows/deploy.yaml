@@ -47,7 +47,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init
-        run: terraform init -backend-config="environments/${{ env.DESTINATION_BRANCH }}.backend.tfvars"
+        run: terraform init -backend-config="environments/main.backend.tfvars"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -56,7 +56,7 @@ jobs:
       - name: Terraform Deploy
         run: |
           terraform apply -auto-approve \
-            -var-file="environments/${{ env.DESTINATION_BRANCH }}.tfvars" \
+            -var-file="environments/main.tfvars" \
             -var="account_id=${{ vars.AWS_ACCOUNT_ID }}" \
             -var="region=${{ vars.AWS_REGION }}" \
             -var="project_version=${{ env.PROJECT_VERSION }}" \

@@ -34,3 +34,8 @@ resource "aws_iam_role_policy_attachment" "lambda_policy" {
   role       = aws_iam_role.default.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
+
+resource "aws_iam_role_policy_attachment" "kms_policy" {
+  role       = aws_iam_role.default.name
+  policy_arn = aws_iam_policy.kms_policy.arn
+}

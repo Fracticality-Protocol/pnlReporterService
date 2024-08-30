@@ -1,6 +1,6 @@
 resource "aws_lambda_function" "default" {
   function_name    = var.name
-  handler          = "bundle.handler"
+  handler          = "index.handler"
   runtime          = "nodejs18.x"
   role             = aws_iam_role.default.arn
   filename         = "${path.module}/../dist/bundle.zip"

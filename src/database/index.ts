@@ -11,7 +11,7 @@ export async function initializeDatabaseConnection(): Promise<PostgresJsDatabase
     return db
   }
   let connection: postgres.Sql<{}> | null = null
-  if (process.env.UNIT_TEST_MODE) {
+  if (process.env.NODE_ENV === 'test') {
     //local defaults for a local db instance
     connection = postgres({
       database: process.env.DB_NAME

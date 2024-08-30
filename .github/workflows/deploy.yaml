@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/deploy-infra
   pull_request:
     branches:
       - main

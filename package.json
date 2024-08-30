@@ -4,11 +4,10 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "dotenv -- node dist/main.js",
+    "build": "webpack",
+    "start": "dotenv -- node dist/index.js",
     "dev": "dotenv -- ts-node src/run.ts",
-    "test": "dotenv -- jest",
-    "package": "webpack"
+    "test": "dotenv -- jest"
   },
   "author": "",
   "license": "ISC",

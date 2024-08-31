@@ -23,7 +23,10 @@ export const handler: Handler<ReportEvent, MainServiceJobResults | void> = async
   context: Context
 ): Promise<MainServiceJobResults | void> => {
   try {
-    return await pnlReporter.initialize({ nav: parseFloat(event.nav), timestamp: event.timestamp })
+    return await pnlReporter.initialize({
+      nav: parseFloat(event.nav),
+      timestamp: event.timestamp
+    })
   } catch (error) {
     console.error('Error initializing PNL Reporter:', error)
     throw error

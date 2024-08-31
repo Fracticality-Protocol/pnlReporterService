@@ -82,6 +82,9 @@ export class FractalityPnlReporter {
     this.OPERATION_MODE = _OPERATION_MODE
     this.KEY_MODE = _KEY_MODE
 
+    console.info('Running in ', this.OPERATION_MODE, ' mode')
+    console.info('Using ', this.KEY_MODE, ' key management mode')
+
     this.blockchainConnection = null
     this.#client = null
     this.#job = null
@@ -193,6 +196,7 @@ export class FractalityPnlReporter {
         const timeSinceLastContractWrite =
           Math.floor(Date.now() / 1000) -
           (pnlReporterData?.previousContractWriteTimeStamp as number)
+        console.log(timeSinceLastContractWrite)
         if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
           code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
           shouldUpdateContract = true
@@ -224,27 +228,56 @@ export class FractalityPnlReporter {
   async initialize(navData?: NavDataFromApi): Promise<MainServiceJobResults | void> {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
-
-    if (!navData) {
-      console.log('No nav data event deteced fetching nav directly')
-      axiosRetry(axios, {
-        retries: 5,
-        retryDelay: axiosRetry.exponentialDelay,
-        onRetry: (retryCount, error) => {
-          console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
-        }
-      })
-      this.#client = axios.create()
+    if (this.OPERATION_MODE === OperationMode.PULL) {
+      return this._initializePullMode()
+    } else {
+      if (!navData) throw new Error('Missing nav data, necessary for push mode')
+      return this._initializePushMode(navData)
     }
+  }
 
-    const pnlReporterData = await getPnlReporterData()
+  async _initializePullMode() {
+    axiosRetry(axios, {
+      retries: 5,
+      retryDelay: axiosRetry.exponentialDelay,
+      onRetry: (retryCount, error) => {
+        console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
+      }
+    })
+    this.#client = axios.create() //TODO: why is this not being initialized.
+
+    const pnlReporterData = await getPnlReporterData() //from database
 
     if (!pnlReporterData) {
-      const initNavData = navData ? navData : await this._getNavData()
-
+      const initNavData = await this._getNavData()
       //0 previousContractWriteTimeStamp because this is the first time the service is being run
       await updatePnlReporterData(0, initNavData.nav, initNavData.timestamp)
+      console.log('initialized with initial nav data')
+      console.log(initNavData)
+    } else {
+      console.log('initialized with existing nav data')
+      console.log(pnlReporterData)
+    }
+    this.#job = new CronJob(
+      '* * * * *', // Cron expression: Run every minute
+      () => {
+        this._jobRunner()
+      }, // Function to execute
+      null, // onComplete function (null if not needed)
+      false, // Start the job right now
+      'UTC' // Time zone
+    )
+    this.#job.start()
+    console.info('Job scheduler started - running continious pull service')
+  }
 
+  async _initializePushMode(navData: NavDataFromApi): Promise<MainServiceJobResults> {
+    const pnlReporterData = await getPnlReporterData() //from database
+
+    if (!pnlReporterData) {
+      const initNavData = navData
+      //0 previousContractWriteTimeStamp because this is the first time the service is being run
+      await updatePnlReporterData(0, initNavData.nav, initNavData.timestamp)
       console.log('initialized with initial nav data')
       console.log(initNavData)
     } else {
@@ -252,32 +285,19 @@ export class FractalityPnlReporter {
       console.log(pnlReporterData)
     }
 
-    if (this.OPERATION_MODE === OperationMode.PULL) {
-      this.#job = new CronJob(
-        '*/10 * * * *', // Cron expression: Run every minute
-        () => {
-          this._jobRunner(navData)
-        }, // Function to execute
-        null, // onComplete function (null if not needed)
-        false, // Start the job right now
-        'UTC' // Time zone
-      )
-      this.#job.start()
-      console.info('Job scheduler started - running pull service')
-    } else {
-      console.info('Job started - running push service')
-      return await this._jobRunner(navData)
-    }
+    console.info('Job started - running single push service run')
+    return this._jobRunner(navData)
   }
 
-  _jobRunner = async (navData?: NavDataFromApi): Promise<MainServiceJobResults | void> => {
+  _jobRunner = async (navData?: NavDataFromApi): Promise<MainServiceJobResults> => {
     try {
       const newNavData = navData ? navData : await this._getNavData()
+      console.log('New Nav data: ', newNavData)
       const results = await this.mainService(newNavData)
-      console.log(results)
+      console.log('Job results: ', results)
       return results
     } catch (error) {
-      console.error('Job failed - ', { error })
+      throw new Error(`Job failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

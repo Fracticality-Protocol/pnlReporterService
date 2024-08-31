@@ -61,19 +61,23 @@ export const updatePnlReporterData = async (
 }
 
 export const deletePnlReporterData = async () => {
+  let dbConnection: PostgresJsDatabase<typeof schema>
   if (!db) {
-    const db = await initializeDatabaseConnection()
-    if (!db) {
+    dbConnection = await initializeDatabaseConnection()
+    if (!dbConnection) {
       throw new Error('Database not initialized')
-    } else {
-      await db.delete(schema.pnlReporterData).where(eq(schema.pnlReporterData.id, 'singleton'))
     }
+  } else {
+    dbConnection = db
   }
+  await dbConnection
+    .delete(schema.pnlReporterData)
+    .where(eq(schema.pnlReporterData.id, 'singleton'))
 }
 
 export const getPnlReporterData = async () => {
   if (!db) {
     throw new Error('Database not initialized')
   }
-  return await db.query.pnlReporterData.findFirst()
+  return db.query.pnlReporterData.findFirst()
 }

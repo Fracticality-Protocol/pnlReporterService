@@ -4,14 +4,13 @@ on:
   push:
     branches:
       - main
-      - feature/deploy-infra
   pull_request:
     branches:
       - main
 
 jobs:
   deploy:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/deploy-infra')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     strategy:
       matrix:

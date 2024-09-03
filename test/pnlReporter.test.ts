@@ -1,178 +1,335 @@
-import { FractalityPnlReporter,OperationMode,NavDataFromApi,MainServiceJobResults,MainServiceJobResultsCode } from './../src/pnlReporter';
+import {
+    FractalityPnlReporter,
+    NavDataFromApi,
+    MainServiceJobResults,
+    MainServiceJobResultsCode
+} from './../src/pnlReporter'
 
-import { getPnlReporterData,PnlReporterData,deletePnlReporterData,updatePnlReporterData } from '../src/database';
-import FractalityV2VaultABI from '../contracts/FractalityV2Vault.json';
-import dotenv from 'dotenv';
-dotenv.config();
+import {
+    getPnlReporterData,
+    PnlReporterData,
+    deletePnlReporterData,
+    updatePnlReporterData
+} from '../src/database'
+import FractalityV2VaultABI from '../contracts/FractalityV2Vault.json'
+import { KeyMode, OperationMode } from '../src/modes'
+import { env } from '../src/env'
 
-//ENV VARS
-let GET_NAV_URL: string = '';
-let API_KEY: string = '';
-let VAULT_ADDRESS: string = '';
-let PRIVATE_KEY: string = '';
-let RPC_URL: string = '';
-let TIME_PERIOD_FOR_CONTRACT_WRITE: number = 0; //milliseconds
-let PERCENTAGE_TRIGGER_CHANGE: number = 0;
-
-function _parseEnvVars() {
-    if (!process.env?.GET_NAV_URL) {
-        throw new Error('GET_NAV_URL is not set');
-    } else {
-        GET_NAV_URL = process.env.GET_NAV_URL;
+function createNewNavData(
+    previousPnlReporterData: NavDataFromApi,
+    desiredPercentageChange: number,
+    desiredTimeDeltaSecs: number
+): NavDataFromApi {
+    if (!previousPnlReporterData.timestamp) {
+        throw new Error(
+            'Failure - the previousProcessedNavTimeStamp is not set, should have been set at initialization'
+        )
     }
-
-    if (!process.env?.PERCENTAGE_TRIGGER_CHANGE) {
-        throw new Error('PERCENTAGE_TRIGGER_CHANGE is not set');
-    } else {
-        PERCENTAGE_TRIGGER_CHANGE = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE);
+    if (!previousPnlReporterData.nav) {
+        throw new Error(
+            'Failure - the previousProcessedNav is not set, should have been set at initialization'
+        )
     }
-
-    if (!process.env?.TIME_PERIOD_FOR_CONTRACT_WRITE) {
-        throw new Error('TIME_PERIOD_FOR_CONTRACT_WRITE is not set');
-    } else {
-        TIME_PERIOD_FOR_CONTRACT_WRITE = parseInt(process.env.TIME_PERIOD_FOR_CONTRACT_WRITE);
-    }
-    if (!process.env?.API_KEY) {
-        throw new Error('API_KEY is not set');
-    } else {
-        API_KEY = process.env.API_KEY;
-    }
-
-    if (!process.env?.VAULT_ADDRESS && !process.env?.TEST_VAULT_ADDRESS ) {
-        throw new Error('VAULT_ADDRESS is not set');
-    } else {
-        if(process.env.UNIT_TEST_MODE){
-            VAULT_ADDRESS = process.env.TEST_VAULT_ADDRESS as string;
-        }else{
-            VAULT_ADDRESS = process.env.VAULT_ADDRESS as string;
-        }        
-    }
-
-    if (!process.env?.PRIVATE_KEY) {
-        throw new Error('PRIVATE_KEY is not set');
-    } else {
-        PRIVATE_KEY = process.env.PRIVATE_KEY;
-    }
-
-    if (!process.env?.RPC_URL) {
-        throw new Error('RPC_URL is not set');
-    } else {
-        RPC_URL = process.env.RPC_URL;
-    }
-}
-
-
-function createNewPnlReporterData(previousPnlReporterData: PnlReporterData, desiredPercentageChange: number,desiredTimeDeltaSecs: number):NavDataFromApi { 
-    if(!previousPnlReporterData.previousProcessedNavTimeStamp ){
-        throw new Error('Failure - the previousProcessedNavTimeStamp is not set, should have been set at initialization');
-    }
-    if(!previousPnlReporterData.previousProcessedNav){
-        throw new Error('Failure - the previousProcessedNav is not set, should have been set at initialization');
-    }
-    const newNavTimeStamp:number = previousPnlReporterData.previousProcessedNavTimeStamp + desiredTimeDeltaSecs;
-    const newNav:number = parseFloat(previousPnlReporterData.previousProcessedNav) * (1 + (desiredPercentageChange / 100));
+    const newNavTimeStamp: number = previousPnlReporterData.timestamp + desiredTimeDeltaSecs
+    const newNav: number = previousPnlReporterData.nav * (1 + desiredPercentageChange / 100)
     return {
         nav: newNav,
         timestamp: newNavTimeStamp
     } as NavDataFromApi
 }
+function sleep(seconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+}
 
 //NOTE: NON KMS, which is impossible to test locally.
 describe('FractalityPnlReporter - NON KMS', () => {
-  let pnlReporter: FractalityPnlReporter;
+    let pnlReporter: FractalityPnlReporter
 
-    beforeAll(() => {
-        _parseEnvVars();
-    });
+    beforeAll(async () => {
+        process.env.TIME_PERIOD_FOR_CONTRACT_WRITE = '10' //10 seconds
+    })
 
-
-    beforeEach(async () => {
+    beforeEach(() => {
         //push mode, only the initial nav is pulled from the API the rest needs to be pushed.
         pnlReporter = new FractalityPnlReporter(
-            GET_NAV_URL,
-            API_KEY,
-            VAULT_ADDRESS,
-            PRIVATE_KEY,
-            RPC_URL,
-            TIME_PERIOD_FOR_CONTRACT_WRITE,
-            PERCENTAGE_TRIGGER_CHANGE,
+            env,
             FractalityV2VaultABI.abi,
-            OperationMode.PUSH
-        );
-    });
+            OperationMode.PUSH,
+            KeyMode.PRIVATE_KEY
+        )
+    })
 
     afterEach(async () => {
         //teardown
-        await deletePnlReporterData();
-    });
+        await deletePnlReporterData()
+        const data = await getPnlReporterData()
+        expect(data).toBeUndefined()
+    })
 
+    test('Push mode - requires initial nav data', async () => {
+        await expect(pnlReporter.initialize()).rejects.toThrow(
+            'Missing nav data, necessary for push mode'
+        )
+    })
 
-  
-  test('When there is no pnlReporterData in the database, the initialization works with fresh data', async () => {
+    test('MainService fails if no pnlReporterData in database', async () => {
+        const initialNavData: NavDataFromApi = {
+            nav: 1000000,
+            timestamp: Math.floor(new Date().getTime() / 1000)
+        }
 
-    //delete the pnlReporterData from the database, we want to start from scratch
-    await deletePnlReporterData();
+        await pnlReporter.initialize(initialNavData)
 
-    await pnlReporter.initialize();
+        await deletePnlReporterData()
+        await expect(pnlReporter.mainService(initialNavData)).rejects.toThrow(
+            'pnlReporterData not found, should have been initialized at startup'
+        )
+    })
 
-    const initialPnlReporterData = await getPnlReporterData();
+    test('When there is no pnlReporterData in the database, the initialization works with fresh data (perfoms no delta job)', async () => {
+        const initialNavData: NavDataFromApi = {
+            nav: 1000000,
+            timestamp: Math.floor(new Date().getTime() / 1000)
+        }
 
-    if (!initialPnlReporterData) {
-      throw new Error('Initial PnlReporterData is null');
-    }
+        const results = await pnlReporter.initialize(initialNavData)
+        expect(results).toBeTruthy()
+        if (!results) throw new Error('Results is null')
 
-    expect(initialPnlReporterData).toBeTruthy();
-    expect(initialPnlReporterData.previousProcessedNav).not.toBeNull();
-    expect(initialPnlReporterData.previousProcessedNavTimeStamp).not.toBeNull();
-    expect(initialPnlReporterData.previousContractWriteTimeStamp).toEqual(0);
+        const initialPnlReporterData = await getPnlReporterData()
 
+        if (!initialPnlReporterData) {
+            throw new Error('Initial PnlReporterData is null')
+        }
 
-  })
+        expect(initialPnlReporterData).toBeTruthy()
+        expect(initialPnlReporterData.previousProcessedNav).toEqual(initialNavData.nav.toString())
+        expect(initialPnlReporterData.previousProcessedNavTimeStamp).toEqual(initialNavData.timestamp)
+        expect(initialPnlReporterData.previousContractWriteTimeStamp).toEqual(0)
 
-  test('When there is a pnlReporterData already in the database, the initialization works with the old data', async () => {
-    //update with dummy data to test initialization
-    await updatePnlReporterData(123,123,123);
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(0)
+        expect(results.percentageChange as number).toBe(0)
+        expect(results.txResults).toBeNull()
+        expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE)
+    })
 
-    await pnlReporter.initialize();
+    test('When there is a pnlReporterData already in the database, the initialization works with the new provided data and performs expected job', async () => {
+        const initialNavData: NavDataFromApi = {
+            nav: 1000000,
+            timestamp: Math.floor(new Date().getTime() / 1000)
+        }
 
-    const initialPnlReporterData = await getPnlReporterData();
+        //update with dummy data to test initialization
+        await updatePnlReporterData(0, initialNavData.nav, initialNavData.timestamp)
 
-    if (!initialPnlReporterData) {
-      throw new Error('Initial PnlReporterData is null');
-    }
+        const timeDeltaSecs = 10
+        const timePercentageChange = 100
 
-    expect(initialPnlReporterData).toBeTruthy();
-    expect(initialPnlReporterData.previousProcessedNav).toEqual('123');
-    expect(initialPnlReporterData.previousProcessedNavTimeStamp).toEqual(123);
-    expect(initialPnlReporterData.previousContractWriteTimeStamp).toEqual(123);
+        const newNavData: NavDataFromApi = createNewNavData(
+            initialNavData,
+            timePercentageChange,
+            timeDeltaSecs
+        )
 
-  })
+        await pnlReporter.initialize(newNavData)
 
+        const initialPnlReporterData = await getPnlReporterData()
 
+        if (!initialPnlReporterData) {
+            throw new Error('Initial PnlReporterData is null')
+        }
 
+        expect(initialPnlReporterData).toBeTruthy()
+        expect(initialPnlReporterData.previousProcessedNav).toEqual((initialNavData.nav * 2).toString())
+        expect(initialPnlReporterData.previousProcessedNavTimeStamp).toEqual(
+            initialNavData.timestamp + timeDeltaSecs
+        )
+        expect(initialPnlReporterData.previousContractWriteTimeStamp).not.toBe(0)
+    })
 
-  test('No percentage change at all', async () => {
+    test('No percentage change at all', async () => {
+        const initialNavData: NavDataFromApi = {
+            nav: 1000000,
+            timestamp: Math.floor(new Date().getTime() / 1000)
+        }
 
-    await pnlReporter.initialize();
+        await pnlReporter.initialize(initialNavData)
+        const originalData = await getPnlReporterData()
 
-    const initialPnlReporterData = await getPnlReporterData();
+        const newNavData: NavDataFromApi = {
+            nav: parseFloat(originalData?.previousProcessedNav as string),
+            timestamp: (originalData?.previousProcessedNavTimeStamp as number) + 60
+        }
+        const results = await pnlReporter.mainService(newNavData)
 
-    if(!initialPnlReporterData){
-        throw new Error('Failure - the initial pnlReporterData is null, should have been set at initialization');
-    }
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(0)
+        expect(results.percentageChange as number).toBe(0)
+        expect(results.txResults).toBeNull()
+        expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE)
 
-    const newNavData:NavDataFromApi = createNewPnlReporterData(initialPnlReporterData,0,0);
+        const postData = await getPnlReporterData()
+        expect(postData?.id).toEqual(originalData?.id)
+        expect(postData?.previousContractWriteTimeStamp).toEqual(
+            originalData?.previousContractWriteTimeStamp
+        )
+        expect(postData?.previousProcessedNav).toEqual(originalData?.previousProcessedNav)
+        expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+    })
 
-    const results:MainServiceJobResults=await pnlReporter.mainService(newNavData);
+    test('percentage change (positive) triggers a write to the contract', async () => {
+        const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
+        await percentageChangeTriggerTest(minPercentageChange);
+    })
 
-    expect(results).toBeTruthy();
-    expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE);
-    expect(results.delta).toBe(0);
-    expect(results.percentageChange).toBe(0);
-    expect(results.txResults).toBeNull();
+    
+    test('percentage change (negative) triggers a write to the contract', async () => {
+        const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
+        await percentageChangeTriggerTest(-minPercentageChange);
+    })
+    
+
+    test('time threshhold change triggers a write to the contract (positive)', async () => {
+        const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
+        const prevNavData = await percentageChangeTriggerTest(minPercentageChange);
+
+        const minTimePeriodForContractWrite = parseFloat(
+            process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
+        )
+
+        //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
+        const newNavData = createNewNavData(prevNavData, minPercentageChange - 0.1, minTimePeriodForContractWrite)
+
  
-  });
-  
+        console.log("sleeping for ", minTimePeriodForContractWrite, " seconds to match blockchain time")
+        await sleep(minTimePeriodForContractWrite)
 
-});
+        const preData = await getPnlReporterData()
 
+        const results = await pnlReporter.mainService(newNavData)
+        console.log('results: ', results)
+
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(1503.75)
+        expect(results.percentageChange as number).toBe(minPercentageChange-0.1)
+        expect(results.txResults).toBeTruthy()
+        expect(results.code).toBe(MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE)
+
+        const postData = await getPnlReporterData()
+        expect(postData?.id).toEqual(preData?.id)
+        expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
+        expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
+        expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+    })
+
+
+    test('time threshhold change triggers a write to the contract (negative)', async () => {
+        const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
+        const prevNavData = await percentageChangeTriggerTest(minPercentageChange);
+
+        const minTimePeriodForContractWrite = parseFloat(
+            process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
+        )
+
+        const newNavData = createNewNavData(prevNavData,  0.1-minPercentageChange, minTimePeriodForContractWrite)
+
+        console.log("sleeping for ", minTimePeriodForContractWrite, " seconds to match blockchain time")
+        await sleep(minTimePeriodForContractWrite)
+
+        const preData = await getPnlReporterData()
+
+        const results = await pnlReporter.mainService(newNavData)
+        console.log('results: ', results)
+
+        const delta = newNavData.nav-prevNavData.nav
+
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(delta)
+        expect(results.percentageChange as number).toBe(0.1-minPercentageChange)
+        expect(results.txResults).toBeTruthy()
+        expect(results.code).toBe(MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE)
+
+        const postData = await getPnlReporterData()
+        expect(postData?.id).toEqual(preData?.id)
+        expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
+        expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
+        expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+    })
+
+    
+    test('time threshhold and percenrage change are not breached, no write to the contract', async () => {
+        const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
+
+        const prevNavData = await percentageChangeTriggerTest(minPercentageChange);
+
+        const minTimePeriodForContractWrite = parseFloat(
+            process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
+        )
+        const timeDeltaSecs = 1;
+
+        //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
+        const newNavData = createNewNavData(prevNavData, minPercentageChange - 0.1, timeDeltaSecs)
+
+ 
+        console.log("sleeping for ", timeDeltaSecs, " seconds to match blockchain time")
+        await sleep(timeDeltaSecs)
+
+        const preData = await getPnlReporterData()
+
+        const results = await pnlReporter.mainService(newNavData)
+        console.log('results: ', results)
+
+        
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(1503.75)
+        expect(results.percentageChange as number).toBe(minPercentageChange-0.1)
+        expect(results.txResults).toBeNull()
+        expect(results.code).toBe(MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE)
+        
+        const postData = await getPnlReporterData()
+        expect(postData?.id).toEqual(preData?.id)
+        expect(postData?.previousContractWriteTimeStamp).toEqual(preData?.previousContractWriteTimeStamp)
+        expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
+        expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+        
+    })
+
+
+    async function percentageChangeTriggerTest(percentageChange: number) {
+        const initialNavData: NavDataFromApi = {
+            nav: 1000000,
+            timestamp: Math.floor(new Date().getTime() / 1000)
+        }
+
+        await pnlReporter.initialize(initialNavData)
+        const originalData = await getPnlReporterData()
+
+        //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
+        const newNavData = createNewNavData(initialNavData, percentageChange, 1)
+
+        const results = await pnlReporter.mainService(newNavData)
+        console.log('results: ', results)
+
+        const delta = newNavData.nav-parseFloat(originalData?.previousProcessedNav as string);
+
+        expect(results).toBeTruthy()
+        expect(results.delta as number).toBe(delta)
+        expect(results.percentageChange as number).toBe(percentageChange)
+        expect(results.txResults).toBeTruthy()
+        expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
+
+        const postData = await getPnlReporterData()
+        expect(postData?.id).toEqual(originalData?.id)
+        expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
+        expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
+        expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+        return newNavData;
+    }
+
+
+
+})

@@ -365,7 +365,7 @@ export class FractalityPnlReporter {
             │         $$$$$           │
             │       $$     $$         │
             │      $   $$$   $        │
-            │      $  $   $  $        │
+            │      $ $ PNL $ $        │
             │      $   $$$   $        │
             │       $$     $$         │
             │         $$$$$           │

@@ -99,18 +99,6 @@ export class FractalityPnlReporter {
     }
   }
 
-  /*
-  _calculatePercentageChange = async (
-    newNavData: NavDataFromApi,
-    previousNavData: PnlReporterData
-  ): Promise<number> => {
-    const previousProcessedNavData = parseFloat(previousNavData.previousProcessedNav as string)
-    const percentageChange =
-      ((newNavData.nav - previousProcessedNavData) / previousProcessedNavData) * 100
-    return percentageChange
-  }
-*/
-
   _calculatePercentageChange = async (
     newNavData: NavDataFromApi, //in decimals units
     currentVaultAssets: bigint //in full decimals units
@@ -123,12 +111,6 @@ export class FractalityPnlReporter {
       ((newNavData.nav - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
     return percentageChange
   }
-
-  /*
-  _calculateDelta = (newNav: number, oldNav: number): number => {
-    return newNav - oldNav
-  }
-    */
 
   _calculateDelta = (newNavData: number, currentVaultAssets: bigint): bigint => {
     if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')

@@ -23,7 +23,7 @@ export const handler: Handler<ReportEvent, MainServiceJobResults | void> = async
   context: Context
 ): Promise<MainServiceJobResults | void> => {
   try {
-    return await pnlReporter.initialize({
+    await pnlReporter.initialize({
       nav: parseFloat(event.nav),
       timestamp: event.timestamp
     })

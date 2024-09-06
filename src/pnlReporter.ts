@@ -15,6 +15,11 @@ import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
 
 export interface NavDataFromApi {
+  nav: number //comes in as a number from api.
+  timestamp: number //timestamp (seconds)
+}
+
+export interface NavDataFromApiScaled {
   nav: bigint //needs to be in wei units, same as vault.
   timestamp: number //timestamp (seconds)
 }
@@ -99,13 +104,18 @@ export class FractalityPnlReporter {
     }
   }
 
-  //calculates the percentage change with truncated decimal representation of the assets.
+  //TODO: test this with very large numbers that may overflow the number type.
   _calculatePercentageChange = async (
-    newNavData: NavDataFromApi, //in decimals units
+    newNavData: NavDataFromApiScaled, //in decimals units
     currentVaultAssets: bigint //in full decimals units
   ): Promise<number> => {
-    const currentVaultAssetsInDecimals = parseFloat(ethers.formatUnits(currentVaultAssets, 18))
-    const newNavDataInDecimals = parseFloat(ethers.formatUnits(newNavData.nav, 18))
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const decimals = await this.blockchainConnection.assetDecimals
+    const currentVaultAssetsInDecimals = parseFloat(
+      ethers.formatUnits(currentVaultAssets, decimals.valueOf())
+    )
+    const newNavDataInDecimals = parseFloat(ethers.formatUnits(newNavData.nav, decimals.valueOf()))
+
     const percentageChange =
       ((newNavDataInDecimals - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
     return Number(percentageChange.toFixed(2))
@@ -155,14 +165,28 @@ export class FractalityPnlReporter {
   //if it is, write delta to contract
   //write current timestamp to previousContractWriteTimeStamp
   //if it's not, do nothing
-  mainService = async (newNavData: NavDataFromApi): Promise<MainServiceJobResults> => {
-    console.log('New Nav data: ', newNavData)
+  mainService = async (
+    newNavData: NavDataFromApi | NavDataFromApiScaled
+  ): Promise<MainServiceJobResults> => {
     let code: MainServiceJobResultsCode = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
     this._drawLogo()
+    console.log('New Nav data: ', newNavData)
 
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const decimals = this.blockchainConnection.assetDecimals
+
+    let scaledNavData: NavDataFromApiScaled | null = null
+    if (typeof newNavData.nav === 'number') {
+      scaledNavData = {
+        nav: ethers.parseUnits(newNavData.nav.toString(), decimals.valueOf()),
+        timestamp: newNavData.timestamp
+      } as NavDataFromApiScaled
+    } else {
+      scaledNavData = newNavData as NavDataFromApiScaled //already passed in scaled.
+    }
     const pnlReporterData = await getPnlReporterData()
     const vaultAssets = await this._getVaultAssets()
-    console.log('vaultAssets', vaultAssets)
+    console.log('current vaultAssets', vaultAssets)
     let txTimestamp = 0
 
     if (pnlReporterData) {
@@ -170,10 +194,10 @@ export class FractalityPnlReporter {
     }
 
     //calculate the percentage change and delta
-    const percentageChange = await this._calculatePercentageChange(newNavData, vaultAssets)
+    const percentageChange = await this._calculatePercentageChange(scaledNavData, vaultAssets)
     console.log('percentage change', percentageChange)
 
-    const delta = this._calculateDelta(newNavData.nav, vaultAssets)
+    const delta = this._calculateDelta(scaledNavData.nav, vaultAssets)
     console.log('delta', delta)
 
     let txResults: WriteToContractResults | null = null
@@ -189,7 +213,7 @@ export class FractalityPnlReporter {
         shouldUpdateContract = true
       } else {
         const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
-        console.log("time since last contract write", timeSinceLastContractWrite);
+        console.log('time since last contract write', timeSinceLastContractWrite)
         if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
           code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
           shouldUpdateContract = true
@@ -221,7 +245,6 @@ export class FractalityPnlReporter {
     return results
   }
 
-  //TODO: refactor this so the job doesn't run right away.
   async initialize() {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
@@ -238,7 +261,7 @@ export class FractalityPnlReporter {
         console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
       }
     })
-    this.#client = axios.create() //TODO: why is this not being initialized.
+    this.#client = axios.create()
 
     this.#job = new CronJob(
       '* * * * *', // Cron expression: Run every minute
@@ -256,7 +279,6 @@ export class FractalityPnlReporter {
   _jobRunner = async (navData?: NavDataFromApi): Promise<MainServiceJobResults> => {
     try {
       const newNavData = navData ? navData : await this._getNavData()
-      console.log('newNavData', newNavData)
       const results = await this.mainService(newNavData)
       return results
     } catch (error) {
@@ -272,10 +294,8 @@ export class FractalityPnlReporter {
           'x-api-key': this.#API_KEY
         }
       })
-      if(!this.blockchainConnection) throw new Error('Blockchain connection not initialized');
-      const decimals = this.blockchainConnection.assetDecimals
       return {
-        nav: ethers.parseUnits(response.data.nav, decimals.valueOf()),
+        nav: parseFloat(response.data.nav),
         timestamp: response.data.timestamp
       }
     } catch (error: unknown) {

@@ -2,6 +2,7 @@ import { type Context, type Handler } from 'aws-lambda'
 
 import FractalityV2VaultABI from '../contracts/FractalityV2Vault.json'
 import { FractalityPnlReporter, type MainServiceJobResults } from './pnlReporter'
+import { ethers } from 'ethers'
 import { env } from './env'
 
 interface ReportEvent {
@@ -23,8 +24,15 @@ export const handler: Handler<ReportEvent, MainServiceJobResults | void> = async
   context: Context
 ): Promise<MainServiceJobResults | void> => {
   try {
-    return await pnlReporter.initialize({
-      nav: parseFloat(event.nav),
+    await pnlReporter.initialize()
+
+    if (!pnlReporter.blockchainConnection) {
+      throw new Error('Blockchain connection not initialized')
+    }
+    const decimals = pnlReporter.blockchainConnection.assetDecimals
+    //convert from decimal representation to full units.
+    return pnlReporter.mainService({
+      nav: ethers.parseUnits(event.nav, decimals.valueOf()),
       timestamp: event.timestamp
     })
   } catch (error) {

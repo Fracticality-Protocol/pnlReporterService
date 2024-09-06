@@ -34,7 +34,7 @@ export enum MainServiceJobResultsCode {
 }
 
 export interface MainServiceJobResults {
-  delta: number
+  delta: bigint
   percentageChange: number
   txResults: WriteToContractResults | null
   code: string
@@ -100,46 +100,38 @@ export class FractalityPnlReporter {
   }
 
   _calculatePercentageChange = async (
-    newNavData: NavDataFromApi,
-    previousNavData: PnlReporterData
+    newNavData: NavDataFromApi, //in decimals units
+    currentVaultAssets: bigint //in full decimals units
   ): Promise<number> => {
-    const previousProcessedNavData = parseFloat(previousNavData.previousProcessedNav as string)
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const currentVaultAssetsInDecimals = parseFloat(
+      ethers.formatUnits(currentVaultAssets, Number(this.blockchainConnection.assetDecimals))
+    )
     const percentageChange =
-      ((newNavData.nav - previousProcessedNavData) / previousProcessedNavData) * 100
+      ((newNavData.nav - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
     return percentageChange
   }
 
-  _calculateDelta = (newNav: number, oldNav: number): number => {
-    return newNav - oldNav
+  _calculateDelta = (newNavData: number, currentVaultAssets: bigint): bigint => {
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const newNavDataInWei = ethers.parseUnits(
+      newNavData.toString(),
+      Number(this.blockchainConnection.assetDecimals)
+    )
+    return newNavDataInWei - currentVaultAssets
   }
 
-  _writeToContract = async (delta: number): Promise<WriteToContractResults> => {
+  _writeToContract = async (delta: bigint): Promise<WriteToContractResults> => {
     if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
-
     console.log('writing to contract')
     let tx
-    if (delta > 0) {
+    if (delta > BigInt(0)) {
       console.log('delta is positive - reporting profit')
-
-      const deltaInAssetUnits = ethers.parseUnits(
-        delta.toString(),
-        Number(this.blockchainConnection.assetDecimals)
-      )
-      console.log('deltaInAssetUnits', deltaInAssetUnits)
-      tx = await this.blockchainConnection.contract.reportProfits(
-        deltaInAssetUnits,
-        'pnlReporterService'
-      )
-    } else if (delta < 0) {
+      tx = await this.blockchainConnection.contract.reportProfits(delta, 'pnlReporterService')
+    } else if (delta < BigInt(0)) {
       console.log('delta is negative - reporting loss')
-
-      const deltaInAssetUnits = ethers.parseUnits(
-        Math.abs(delta).toString(),
-        Number(this.blockchainConnection.assetDecimals)
-      )
-      console.log('deltaInAssetUnits', deltaInAssetUnits)
       tx = await this.blockchainConnection.contract.reportLosses(
-        deltaInAssetUnits,
+        -delta, //absolute value of delta
         'pnlReporterService'
       )
     }
@@ -152,6 +144,12 @@ export class FractalityPnlReporter {
       txTimestamp: block?.timestamp as number,
       hash: receipt.hash
     }
+  }
+
+  _getVaultAssets = async (): Promise<bigint> => {
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const vaultAssets = await this.blockchainConnection.contract.vaultAssets()
+    return vaultAssets
   }
 
   //This should be compatible with both push and pull modes.
@@ -168,22 +166,25 @@ export class FractalityPnlReporter {
     this._drawLogo()
 
     const pnlReporterData = await getPnlReporterData()
+    const vaultAssets = await this._getVaultAssets()
+
+    console.log(pnlReporterData)
+    console.log('vaultAssets', vaultAssets)
 
     if (!pnlReporterData) {
       throw new Error('pnlReporterData not found, should have been initialized at startup')
     }
 
     //calculate the percentage change and delta
-    const percentageChange = await this._calculatePercentageChange(newNavData, pnlReporterData)
-    const delta = this._calculateDelta(
-      newNavData.nav,
-      parseFloat(pnlReporterData.previousProcessedNav as string)
-    )
+    const percentageChange = await this._calculatePercentageChange(newNavData, vaultAssets)
+    console.log('percentageChange', percentageChange)
+
+    const delta = this._calculateDelta(newNavData.nav, vaultAssets)
 
     let txTimestamp = pnlReporterData?.previousContractWriteTimeStamp as number
     let txResults: WriteToContractResults | null = null
 
-    if (delta === 0) {
+    if (delta.toString() === '0') {
       code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
       console.log(code)
     } else {

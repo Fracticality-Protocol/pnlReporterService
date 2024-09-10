@@ -15,7 +15,12 @@ import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
 
 export interface NavDataFromApi {
-  nav: number //string representation of a floating point number
+  nav: number //comes in as a number from api.
+  timestamp: number //timestamp (seconds)
+}
+
+export interface NavDataFromApiScaled {
+  nav: bigint //needs to be in wei units, same as vault.
   timestamp: number //timestamp (seconds)
 }
 
@@ -99,26 +104,25 @@ export class FractalityPnlReporter {
     }
   }
 
+  //TODO: test this with very large numbers that may overflow the number type.
   _calculatePercentageChange = async (
-    newNavData: NavDataFromApi, //in decimals units
+    newNavData: NavDataFromApiScaled, //in decimals units
     currentVaultAssets: bigint //in full decimals units
   ): Promise<number> => {
     if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const decimals = await this.blockchainConnection.assetDecimals
     const currentVaultAssetsInDecimals = parseFloat(
-      ethers.formatUnits(currentVaultAssets, Number(this.blockchainConnection.assetDecimals))
+      ethers.formatUnits(currentVaultAssets, decimals.valueOf())
     )
+    const newNavDataInDecimals = parseFloat(ethers.formatUnits(newNavData.nav, decimals.valueOf()))
+
     const percentageChange =
-      ((newNavData.nav - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
-    return percentageChange
+      ((newNavDataInDecimals - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
+    return Number(percentageChange.toFixed(2))
   }
 
-  _calculateDelta = (newNavData: number, currentVaultAssets: bigint): bigint => {
-    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
-    const newNavDataInWei = ethers.parseUnits(
-      newNavData.toString(),
-      Number(this.blockchainConnection.assetDecimals)
-    )
-    return newNavDataInWei - currentVaultAssets
+  _calculateDelta = (newNavData: bigint, currentVaultAssets: bigint): bigint => {
+    return newNavData - currentVaultAssets
   }
 
   _writeToContract = async (delta: bigint): Promise<WriteToContractResults> => {
@@ -161,27 +165,41 @@ export class FractalityPnlReporter {
   //if it is, write delta to contract
   //write current timestamp to previousContractWriteTimeStamp
   //if it's not, do nothing
-  mainService = async (newNavData: NavDataFromApi): Promise<MainServiceJobResults> => {
+  mainService = async (
+    newNavData: NavDataFromApi | NavDataFromApiScaled
+  ): Promise<MainServiceJobResults> => {
     let code: MainServiceJobResultsCode = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
     this._drawLogo()
+    console.log('New Nav data: ', newNavData)
 
+    if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
+    const decimals = this.blockchainConnection.assetDecimals
+
+    let scaledNavData: NavDataFromApiScaled | null = null
+    if (typeof newNavData.nav === 'number') {
+      scaledNavData = {
+        nav: ethers.parseUnits(newNavData.nav.toString(), decimals.valueOf()),
+        timestamp: newNavData.timestamp
+      } as NavDataFromApiScaled
+    } else {
+      scaledNavData = newNavData as NavDataFromApiScaled //already passed in scaled.
+    }
     const pnlReporterData = await getPnlReporterData()
     const vaultAssets = await this._getVaultAssets()
+    console.log('current vaultAssets', vaultAssets)
+    let txTimestamp = 0
 
-    console.log(pnlReporterData)
-    console.log('vaultAssets', vaultAssets)
-
-    if (!pnlReporterData) {
-      throw new Error('pnlReporterData not found, should have been initialized at startup')
+    if (pnlReporterData) {
+      txTimestamp = pnlReporterData?.previousContractWriteTimeStamp as number
     }
 
     //calculate the percentage change and delta
-    const percentageChange = await this._calculatePercentageChange(newNavData, vaultAssets)
-    console.log('percentageChange', percentageChange)
+    const percentageChange = await this._calculatePercentageChange(scaledNavData, vaultAssets)
+    console.log('percentage change', percentageChange)
 
-    const delta = this._calculateDelta(newNavData.nav, vaultAssets)
+    const delta = this._calculateDelta(scaledNavData.nav, vaultAssets)
+    console.log('delta', delta)
 
-    let txTimestamp = pnlReporterData?.previousContractWriteTimeStamp as number
     let txResults: WriteToContractResults | null = null
 
     if (delta.toString() === '0') {
@@ -194,10 +212,8 @@ export class FractalityPnlReporter {
         code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
         shouldUpdateContract = true
       } else {
-        const timeSinceLastContractWrite =
-          Math.floor(Date.now() / 1000) -
-          (pnlReporterData?.previousContractWriteTimeStamp as number)
-        console.log(timeSinceLastContractWrite)
+        const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
+        console.log('time since last contract write', timeSinceLastContractWrite)
         if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
           code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
           shouldUpdateContract = true
@@ -215,25 +231,25 @@ export class FractalityPnlReporter {
 
     //update the pnlReporterData with every single time, even if no transaction took place.
     //which scenarios are this this? Not enough time has passed, or percentage change is not reached.
-    await updatePnlReporterData(txTimestamp, newNavData.nav, newNavData.timestamp)
+    //Note: the newNavData written here might have truncation, need to update schema to store as bigint
+    await updatePnlReporterData(txTimestamp, newNavData.nav.toString(), newNavData.timestamp)
     console.log('finished job')
 
-    return {
+    const results = {
       delta: delta,
       percentageChange: percentageChange,
       txResults: txResults,
       code: code
     } as MainServiceJobResults
+    console.log('Main Service results: ', results)
+    return results
   }
 
-  async initialize(navData?: NavDataFromApi): Promise<MainServiceJobResults | void> {
+  async initialize() {
     await initializeDatabaseConnection()
     this.blockchainConnection = await this._initBlockchainConnection(this.KEY_MODE === KeyMode.KMS)
     if (this.OPERATION_MODE === OperationMode.PULL) {
-      return this._initializePullMode()
-    } else {
-      if (!navData) throw new Error('Missing nav data, necessary for push mode')
-      return this._initializePushMode(navData)
+      this._initializePullMode()
     }
   }
 
@@ -245,20 +261,8 @@ export class FractalityPnlReporter {
         console.log(`Retrying request (attempt ${retryCount + 1}): ${error.message}`)
       }
     })
-    this.#client = axios.create() //TODO: why is this not being initialized.
+    this.#client = axios.create()
 
-    const pnlReporterData = await getPnlReporterData() //from database
-
-    if (!pnlReporterData) {
-      const initNavData = await this._getNavData()
-      //0 previousContractWriteTimeStamp because this is the first time the service is being run
-      await updatePnlReporterData(0, initNavData.nav, initNavData.timestamp)
-      console.log('initialized with initial nav data')
-      console.log(initNavData)
-    } else {
-      console.log('initialized with existing nav data')
-      console.log(pnlReporterData)
-    }
     this.#job = new CronJob(
       '* * * * *', // Cron expression: Run every minute
       () => {
@@ -272,30 +276,10 @@ export class FractalityPnlReporter {
     console.info('Job scheduler started - running continious pull service')
   }
 
-  async _initializePushMode(navData: NavDataFromApi): Promise<MainServiceJobResults> {
-    const pnlReporterData = await getPnlReporterData() //from database
-
-    if (!pnlReporterData) {
-      const initNavData = navData
-      //0 previousContractWriteTimeStamp because this is the first time the service is being run
-      await updatePnlReporterData(0, initNavData.nav, initNavData.timestamp)
-      console.log('initialized with initial nav data')
-      console.log(initNavData)
-    } else {
-      console.log('initialized with existing nav data')
-      console.log(pnlReporterData)
-    }
-
-    console.info('Job started - running single push service run')
-    return this._jobRunner(navData)
-  }
-
   _jobRunner = async (navData?: NavDataFromApi): Promise<MainServiceJobResults> => {
     try {
       const newNavData = navData ? navData : await this._getNavData()
-      console.log('New Nav data: ', newNavData)
       const results = await this.mainService(newNavData)
-      console.log('Job results: ', results)
       return results
     } catch (error) {
       throw new Error(`Job failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -310,7 +294,6 @@ export class FractalityPnlReporter {
           'x-api-key': this.#API_KEY
         }
       })
-
       return {
         nav: parseFloat(response.data.nav),
         timestamp: response.data.timestamp

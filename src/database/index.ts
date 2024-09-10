@@ -13,10 +13,12 @@ export async function initializeDatabaseConnection(): Promise<PostgresJsDatabase
   let connection: postgres.Sql<{}> | null = null
   if (process.env.NODE_ENV === 'test') {
     //local defaults for a local db instance
+    console.log('connected to local database')
     connection = postgres({
       database: process.env.DB_NAME
     })
   } else {
+    console.log('connected to ', process.env.DB_HOST)
     connection = postgres({
       host: process.env.DB_HOST,
       port: Number(process.env.DB_PORT || 5432),
@@ -35,7 +37,7 @@ export type PnlReporterData = typeof schema.pnlReporterData.$inferSelect
 
 export const updatePnlReporterData = async (
   previousContractWriteTimeStamp: number,
-  previousProcessedNav: number,
+  previousProcessedNav: string,
   previousProcessedNavTimeStamp: number
 ) => {
   if (!db) {
@@ -47,14 +49,14 @@ export const updatePnlReporterData = async (
     .values({
       id: 'singleton',
       previousContractWriteTimeStamp: previousContractWriteTimeStamp,
-      previousProcessedNav: previousProcessedNav.toString(),
+      previousProcessedNav: previousProcessedNav,
       previousProcessedNavTimeStamp: previousProcessedNavTimeStamp
     })
     .onConflictDoUpdate({
       target: schema.pnlReporterData.id,
       set: {
         previousContractWriteTimeStamp: previousContractWriteTimeStamp,
-        previousProcessedNav: previousProcessedNav.toString(),
+        previousProcessedNav: previousProcessedNav,
         previousProcessedNavTimeStamp: previousProcessedNavTimeStamp
       }
     })

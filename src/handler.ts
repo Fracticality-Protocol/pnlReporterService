@@ -21,9 +21,10 @@ const pnlReporter = new FractalityPnlReporter(
 export const handler: Handler<ReportEvent, MainServiceJobResults | void> = async (
   event,
   context: Context
-): Promise<MainServiceJobResults | void> => {
+): Promise<void> => {
   try {
-    await pnlReporter.initialize({
+    await pnlReporter.initialize()
+    await pnlReporter.mainService({
       nav: parseFloat(event.nav),
       timestamp: event.timestamp
     })

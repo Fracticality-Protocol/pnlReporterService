@@ -22,8 +22,9 @@ resource "aws_iam_policy" "kms_policy" {
           "kms:DescribeKey",
         ]
         Effect   = "Allow"
-        Resource = data.aws_kms_key.testnet.arn
+        Resource = var.environment == "main" ? data.aws_kms_key.mainnet.arn : data.aws_kms_key.testnet.arn
       }
     ]
   })
 }
+

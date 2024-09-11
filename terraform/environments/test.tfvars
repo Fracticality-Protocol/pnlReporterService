@@ -1,3 +1,3 @@
-name        = "pnl-reporter-service"
+name        = "pnl-reporter-service-test"
 project     = "fractality"
 environment = "test"

@@ -1,8 +1,7 @@
 locals {
-  lambda_function_name = var.environment == "main" ? var.name : "${var.name}-test"
-  db_schema            = var.environment == "main" ? "main" : "test"
-  aws_kms_key_id       = var.environment == "main" ? data.aws_kms_key.mainnet.id : data.aws_kms_key.testnet.id
-  api_key              = var.environment == "main" ? data.aws_secretsmanager_secret_version.endpoint.secret_string : data.aws_secretsmanager_secret_version.test_endpoint.secret_string
+  db_schema      = var.environment == "main" ? "main" : "test"
+  aws_kms_key_id = var.environment == "main" ? data.aws_kms_key.mainnet.id : data.aws_kms_key.testnet.id
+  api_key        = var.environment == "main" ? data.aws_secretsmanager_secret_version.endpoint.secret_string : data.aws_secretsmanager_secret_version.test_endpoint.secret_string
 
   percentage_trigger_change      = 0.25
   time_period_for_contract_write = 600
@@ -11,7 +10,7 @@ locals {
 }
 
 resource "aws_lambda_function" "default" {
-  function_name    = local.lambda_function_name
+  function_name    = var.name
   handler          = "index.handler"
   runtime          = "nodejs18.x"
   role             = aws_iam_role.default.arn
@@ -41,7 +40,7 @@ resource "aws_lambda_function" "default" {
 
 
 resource "aws_iam_role" "default" {
-  name               = var.environment == "main" ? "${var.name}-service-role" : "${var.name}-service-role-test"
+  name               = "${var.name}-service-role"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
@@ -52,5 +51,5 @@ resource "aws_iam_role_policy_attachment" "lambda_policy" {
 
 resource "aws_iam_role_policy_attachment" "kms_policy" {
   role       = aws_iam_role.default.name
-  policy_arn = var.environment == "main" ? aws_iam_policy.kms_policy.arn : aws_iam_policy.kms_policy_test.arn
+  policy_arn = aws_iam_policy.kms_policy.arn
 }

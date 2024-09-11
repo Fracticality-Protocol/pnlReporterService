@@ -20,3 +20,10 @@ data "aws_secretsmanager_secret_version" "endpoint" {
   secret_id = data.aws_secretsmanager_secret.endpoint.id
 }
 
+data "aws_secretsmanager_secret" "test_endpoint" {
+  name = "FUND_DATA_INTERNAL_KEY_TEST"
+}
+
+data "aws_secretsmanager_secret_version" "test_endpoint" {
+  secret_id = data.aws_secretsmanager_secret.test_endpoint.id
+}

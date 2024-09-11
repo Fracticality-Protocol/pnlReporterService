@@ -1,15 +1,23 @@
 # PNL Reporter Service
 
-This service is responsible for reporting the PNL of the vault to the contract. It does this by:
+This service is responsible for reporting the fund's PNL to the contract. It does this by:
 
 1. Fetching the NAV of the vault from the API
-2. Calculating the percentage change and delta since the last report (or in the case of a fresh deployment, since service initialization)
+2. Comparing the newest NAV to the vault's vaultAssets() value, which is in way a snapshot of a previous NAV.
 3. Writing the delta to the contract if:
 
-- the nav has changed by more than the percentage change threshold
-- the time period threshold has been reached
+- The nav has changed by more than the percentage change threshold
+- The time period threshold has been reached
 
 Note: no writing to the contract will happen if the nav hasn't changed at all.
+
+# Warning
+
+The NAV value that is reported to this service MUST include ALL changes to it coming from deposits and withdrawals since last time the service was run.
+
+In other words, in the period between the last time the service was run, all deposits and withdrawals that occurred in the contract must be reflected in the NAV value that is reported to this service.
+
+If this is not done, wrong profits or losses will be reported to the contract.
 
 # Running the service
 

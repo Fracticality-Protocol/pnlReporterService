@@ -1,4 +1,4 @@
-import { integer, text, pgSchema, uuid, bigint, boolean } from 'drizzle-orm/pg-core'
+import { integer, text, pgSchema, uuid, bigint, boolean, timestamp } from 'drizzle-orm/pg-core'
 import { env } from '../env'
 
 export const schema = pgSchema(env.DB_SCHEMA || 'test')
@@ -16,5 +16,6 @@ export const profitEntries = schema.table('profit_entries', {
   profitTotal: text('profit_total').notNull(),
   profitInvestors: text('profit_investors').notNull(),
   profitPerformanceFee: text('profit_performance_fee').notNull(),
-  performanceFeeWithdrawn: boolean('performance_fee_withdrawn').notNull().default(false)
+  performanceFeeWithdrawn: boolean('performance_fee_withdrawn').notNull().default(false),
+  reconciliationTimestamp: timestamp('reconciliation_timestamp')
 })

@@ -62,9 +62,9 @@ jobs:
             -var="account_id=${{ vars.AWS_ACCOUNT_ID }}" \
             -var="region=${{ vars.AWS_REGION }}" \
             -var="project_version=${{ env.PROJECT_VERSION }}" \
-            -var="rpc_url=${{ secrets.MAIN_RPC_URL }}" \
-            -var="vault_address=${{ secrets.MAIN_VAULT_ADDRESS }}" \
-            -var="fund_db_nav_endpoint=${{ secrets.MAIN_FUND_DB_NAV_ENDPOINT }}" \
+            -var="rpc_url=${{ vars.RPC_URL }}" \
+            -var="vault_address=${{ vars.VAULT_ADDRESS }}" \
+            -var="fund_db_nav_endpoint=${{ vars.FUND_DB_NAV_ENDPOINT }}" \
             -var="db_name=${{ vars.DB_NAME }}" \
             -var="db_instance_id=${{ vars.DB_INSTANCE_ID }}"
         env:
@@ -81,9 +81,9 @@ jobs:
             -var="account_id=${{ vars.AWS_ACCOUNT_ID }}" \
             -var="region=${{ vars.AWS_REGION }}" \
             -var="project_version=${{ env.PROJECT_VERSION }}" \
-            -var="rpc_url=${{ secrets.TEST_RPC_URL }}" \
-            -var="vault_address=${{ secrets.TEST_VAULT_ADDRESS }}" \
-            -var="fund_db_nav_endpoint=${{ secrets.TEST_FUND_DB_NAV_ENDPOINT }}" \
+            -var="rpc_url=${{ vars.TEST_RPC_URL }}" \
+            -var="vault_address=${{ vars.TEST_VAULT_ADDRESS }}" \
+            -var="fund_db_nav_endpoint=${{ vars.TEST_FUND_DB_NAV_ENDPOINT }}" \
             -var="db_name=${{ vars.DB_NAME }}" \
             -var="db_instance_id=${{ vars.DB_INSTANCE_ID }}"
         env:

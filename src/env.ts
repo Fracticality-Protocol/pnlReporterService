@@ -21,7 +21,8 @@ const envSchema = z
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     OPERATION_MODE: z.nativeEnum(OperationMode).default(OperationMode.PULL),
-    KEY_MODE: z.nativeEnum(KeyMode).default(KeyMode.KMS)
+    KEY_MODE: z.nativeEnum(KeyMode).default(KeyMode.KMS),
+    PERFORMANCE_FEE_PERCENTAGE: z.string().transform((val) => parseFloat(val))
   })
   .refine((data) => data.PRIVATE_KEY || data.AWS_KMS_KEY_ID, {
     message: 'Either PRIVATE_KEY or AWS_KMS_KEY_ID must be set',

@@ -9,7 +9,8 @@ import {
   updatePnlReporterData,
   getPnlReporterData,
   PnlReporterData,
-  initializeDatabaseConnection
+  initializeDatabaseConnection,
+  insertProfitEntry
 } from './database'
 import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
@@ -58,6 +59,7 @@ export class FractalityPnlReporter {
   VAULT_ADDRESS: string
   TIME_PERIOD_FOR_CONTRACT_WRITE: number //seconds
   PERCENTAGE_TRIGGER_CHANGE: number
+  PERFORMANCE_FEE_PERCENTAGE: number
   FRACTALITY_V2_VAULT_ABI: ethers.InterfaceAbi
 
   #PRIVATE_KEY?: string
@@ -86,7 +88,7 @@ export class FractalityPnlReporter {
     this.FRACTALITY_V2_VAULT_ABI = _FRACTALITY_V2_VAULT_ABI
     this.OPERATION_MODE = _OPERATION_MODE
     this.KEY_MODE = _KEY_MODE
-
+    this.PERFORMANCE_FEE_PERCENTAGE = _ENV.PERFORMANCE_FEE_PERCENTAGE
     console.info('Running in ', this.OPERATION_MODE, ' mode')
     console.info('Using ', this.KEY_MODE, ' key management mode')
 
@@ -224,6 +226,7 @@ export class FractalityPnlReporter {
         txResults = await this._writeToContract(delta)
         txTimestamp = txResults.txTimestamp
         console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
+        await this._performProfitEntry(delta)
       } else {
         code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
       }
@@ -339,6 +342,22 @@ export class FractalityPnlReporter {
     const assetDecimals = await assetContract.decimals()
 
     return { contract, signer, provider, assetDecimals: assetDecimals }
+  }
+
+  _performProfitEntry = async (profitTotal: bigint) => {
+    const performanceFeePercentageDecimal = this.PERFORMANCE_FEE_PERCENTAGE / 100
+    //note: the perfomance fee can truncte to zero if the profit total is too small. Investor would get the full amount if the
+    //perfomance fee turns out to be less than 1 wei.
+    const profitPerformanceFee = BigInt(
+      Math.floor(Number(profitTotal) * performanceFeePercentageDecimal)
+    )
+    const profitInvestors = profitTotal - profitPerformanceFee
+
+    console.log('profit performance fee', profitPerformanceFee)
+    console.log('profit investors', profitInvestors)
+
+    await insertProfitEntry(profitTotal, profitInvestors, profitPerformanceFee)
+    console.log('profit entry performed')
   }
 
   _drawLogo = () => {

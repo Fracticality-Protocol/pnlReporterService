@@ -19,6 +19,7 @@ resource "aws_lambda_function" "default" {
       API_KEY                        = data.aws_secretsmanager_secret_version.endpoint.secret_string
       AWS_KMS_KEY_ID                 = data.aws_kms_key.testnet.id
       PERCENTAGE_TRIGGER_CHANGE      = 0.25
+      PERFORMANCE_FEE_PERCENTAGE     = 0.2
       TIME_PERIOD_FOR_CONTRACT_WRITE = 600
       OPERATION_MODE                 = "PUSH"
       KEY_MODE                       = "KMS"

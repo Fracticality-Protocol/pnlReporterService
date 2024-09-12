@@ -32,6 +32,12 @@ interface BlockchainConnection {
   assetDecimals: BigInt
 }
 
+export interface ProfitEntry {
+  profitTotal: bigint
+  profitInvestors: bigint
+  profitPerformanceFee: bigint
+}
+
 export enum MainServiceJobResultsCode {
   DELTA_ZERO_NO_WRITE = 'delta is zero - not writing to contract',
   PERCENTAGE_CHANGE_THRESHOLD_REACHED = 'percentage change threshold reached - writing to contract',
@@ -44,6 +50,7 @@ export interface MainServiceJobResults {
   percentageChange: number
   txResults: WriteToContractResults | null
   code: string
+  profitEntry: ProfitEntry | null
 }
 
 export interface WriteToContractResults {
@@ -178,6 +185,7 @@ export class FractalityPnlReporter {
     const decimals = this.blockchainConnection.assetDecimals
 
     let scaledNavData: NavDataFromApiScaled | null = null
+    let profitEntry: ProfitEntry | null = null
     if (typeof newNavData.nav === 'number') {
       scaledNavData = {
         nav: ethers.parseUnits(newNavData.nav.toString(), decimals.valueOf()),
@@ -226,7 +234,8 @@ export class FractalityPnlReporter {
         txResults = await this._writeToContract(delta)
         txTimestamp = txResults.txTimestamp
         console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-        await this._performProfitEntry(delta)
+        profitEntry = await this._performProfitEntry(delta)
+        console.log('profit entry', profitEntry)
       } else {
         code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
       }
@@ -242,7 +251,8 @@ export class FractalityPnlReporter {
       delta: delta,
       percentageChange: percentageChange,
       txResults: txResults,
-      code: code
+      code: code,
+      profitEntry: profitEntry
     } as MainServiceJobResults
     console.log('Main Service results: ', results)
     return results
@@ -344,7 +354,7 @@ export class FractalityPnlReporter {
     return { contract, signer, provider, assetDecimals: assetDecimals }
   }
 
-  _performProfitEntry = async (profitTotal: bigint) => {
+  _performProfitEntry = async (profitTotal: bigint): Promise<ProfitEntry> => {
     const performanceFeePercentageDecimal = this.PERFORMANCE_FEE_PERCENTAGE / 100
     //note: the perfomance fee can truncte to zero if the profit total is too small. Investor would get the full amount if the
     //perfomance fee turns out to be less than 1 wei.
@@ -353,11 +363,13 @@ export class FractalityPnlReporter {
     )
     const profitInvestors = profitTotal - profitPerformanceFee
 
-    console.log('profit performance fee', profitPerformanceFee)
-    console.log('profit investors', profitInvestors)
-
     await insertProfitEntry(profitTotal, profitInvestors, profitPerformanceFee)
     console.log('profit entry performed')
+    return {
+      profitTotal: profitTotal,
+      profitInvestors: profitInvestors,
+      profitPerformanceFee: profitPerformanceFee
+    }
   }
 
   _drawLogo = () => {

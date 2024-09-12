@@ -68,7 +68,6 @@ describe('FractalityPnlReporter - NON KMS', () => {
     await deletePnlReporterData()
   })
 
-
   test('No percentage change at all', async () => {
     await pnlReporter.initialize()
 
@@ -90,6 +89,8 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(results.percentageChange).toBe(0)
     expect(results.txResults).toBeNull()
     expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE)
+
+    expect(results.profitEntry).toBeNull()
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual('singleton')
@@ -130,8 +131,9 @@ describe('FractalityPnlReporter - NON KMS', () => {
     const results = await pnlReporter.mainService(newNavData)
     console.log('results: ', results)
 
+    const delta = newNavData.nav - prevNavData.nav
     expect(results).toBeTruthy()
-    expect(results.delta).toBe(newNavData.nav - prevNavData.nav)
+    expect(results.delta).toBe(delta)
     expect(results.percentageChange as number).toBe(minPercentageChange - 0.1)
     expect(results.txResults).toBeTruthy()
     expect(results.code).toBe(
@@ -143,6 +145,15 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
+    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
+    const profitInvestors = delta - profitPerformanceFee
+
+    expect(results.profitEntry).toBeTruthy()
+    expect(results.profitEntry?.profitTotal).toBe(delta)
+    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
+    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold change triggers a write to the contract (negative)', async () => {
@@ -180,6 +191,15 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
+    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
+    const profitInvestors = delta - profitPerformanceFee
+
+    expect(results.profitEntry).toBeTruthy()
+    expect(results.profitEntry?.profitTotal).toBe(delta)
+    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
+    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold and percenrage change are not breached, no write to the contract', async () => {
@@ -205,6 +225,7 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(results.percentageChange as number).toBe(minPercentageChange - 0.1)
     expect(results.txResults).toBeNull()
     expect(results.code).toBe(MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE)
+    expect(results.profitEntry).toBeNull()
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual(preData?.id)
@@ -246,6 +267,15 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
+
+    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
+    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
+    const profitInvestors = delta - profitPerformanceFee
+
+    expect(results.profitEntry).toBeTruthy()
+    expect(results.profitEntry?.profitTotal).toBe(delta)
+    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
+    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
 
     return newNavData
   }

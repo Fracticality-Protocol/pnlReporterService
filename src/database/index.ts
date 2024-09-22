@@ -95,10 +95,9 @@ export const insertProfitEntry = async (
   }
   try {
     const newId = uuidv4()
-    const timestamp = Math.floor(Date.now() / 1000)
     await db.insert(schema.profitEntries).values({
       id: newId,
-      timestamp: timestamp,
+      timestamp: new Date(),
       profitTotal: profitTotal.toString(),
       profitInvestors: profitInvestors.toString(),
       profitPerformanceFee: profitPerformanceFee.toString(),

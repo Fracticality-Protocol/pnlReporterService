@@ -21,7 +21,7 @@ export const pnlReporterData = schema.table('pnl_reporter_data', {
 
 export const profitEntries = schema.table('profit_entries', {
   id: uuid('id').primaryKey().notNull(),
-  timestamp: timestamp('timestamp').notNull(),
+  timestamp: bigint('timestamp', { mode: 'number' }).notNull(),
   profitTotal: numeric('profit_total').notNull(),
   profitInvestors: numeric('profit_investors').notNull(),
   profitPerformanceFee: numeric('profit_performance_fee').notNull(),

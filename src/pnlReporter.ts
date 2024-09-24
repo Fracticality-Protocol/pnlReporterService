@@ -231,11 +231,12 @@ export class FractalityPnlReporter {
       }
 
       if (shouldUpdateContract) {
-        txResults = await this._writeToContract(delta)
-        txTimestamp = txResults.txTimestamp
-        console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
         profitEntry = await this._performProfitEntry(delta)
         console.log('profit entry', profitEntry)
+        txResults = await this._writeToContract(profitEntry.profitInvestors)
+        txTimestamp = txResults.txTimestamp
+        console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
+
       } else {
         code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
       }

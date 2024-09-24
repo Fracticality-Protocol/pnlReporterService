@@ -112,7 +112,7 @@ describe('FractalityPnlReporter - NON KMS', () => {
 
   test('time threshhold change triggers a write to the contract (positive)', async () => {
     const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
-    const prevNavData = await percentageChangeTriggerTest(minPercentageChange)
+    const previousTestResultsNavData = await percentageChangeTriggerTest(minPercentageChange)
 
     const minTimePeriodForContractWrite = parseFloat(
       process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
@@ -120,7 +120,7 @@ describe('FractalityPnlReporter - NON KMS', () => {
 
     //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
     const newNavData = createNewNavData(
-      prevNavData,
+      previousTestResultsNavData,
       minPercentageChange - 0.1, //not enoguh to trigger the percentage change
       minTimePeriodForContractWrite
     )
@@ -128,21 +128,21 @@ describe('FractalityPnlReporter - NON KMS', () => {
     console.log('sleeping for ', minTimePeriodForContractWrite, ' seconds to match blockchain time')
     await sleep(minTimePeriodForContractWrite)
 
-    const results = await pnlReporter.mainService(newNavData)
-    console.log('results: ', results)
+    const newResults = await pnlReporter.mainService(newNavData)
+    console.log('results: ', newResults)
 
-    const delta = newNavData.nav - prevNavData.nav
-    expect(results).toBeTruthy()
-    expect(results.delta).toBe(delta)
-    expect(results.percentageChange as number).toBe(minPercentageChange - 0.1)
-    expect(results.txResults).toBeTruthy()
-    expect(results.code).toBe(
+    const delta = newNavData.nav - previousTestResultsNavData.nav
+    expect(newResults).toBeTruthy()
+    expect(newResults.delta).toBe(delta)
+    expect(newResults.percentageChange as number).toBe(minPercentageChange - 0.1)
+    expect(newResults.txResults).toBeTruthy()
+    expect(newResults.code).toBe(
       MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
     )
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual('singleton')
-    expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
+    expect(postData?.previousContractWriteTimeStamp).toEqual(newResults.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
 
@@ -150,22 +150,22 @@ describe('FractalityPnlReporter - NON KMS', () => {
     const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
     const profitInvestors = delta - profitPerformanceFee
 
-    expect(results.profitEntry).toBeTruthy()
-    expect(results.profitEntry?.profitTotal).toBe(delta)
-    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
+    expect(newResults.profitEntry).toBeTruthy()
+    expect(newResults.profitEntry?.profitTotal).toBe(delta)
+    expect(newResults.profitEntry?.profitInvestors).toBe(profitInvestors)
+    expect(newResults.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold change triggers a write to the contract (negative)', async () => {
     const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
-    const prevNavData = await percentageChangeTriggerTest(minPercentageChange)
+    const previousTestResultsNavData = await percentageChangeTriggerTest(minPercentageChange)
 
     const minTimePeriodForContractWrite = parseFloat(
       process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
     )
 
     const newNavData = createNewNavData(
-      prevNavData,
+      previousTestResultsNavData,
       0.1 - minPercentageChange,
       minTimePeriodForContractWrite
     )
@@ -173,22 +173,22 @@ describe('FractalityPnlReporter - NON KMS', () => {
     console.log('sleeping for ', minTimePeriodForContractWrite, ' seconds to match blockchain time')
     await sleep(minTimePeriodForContractWrite)
 
-    const results = await pnlReporter.mainService(newNavData)
-    console.log('results: ', results)
+    const newResults = await pnlReporter.mainService(newNavData)
+    console.log('results: ', newResults)
 
-    const delta = newNavData.nav - prevNavData.nav
+    const delta = newNavData.nav - previousTestResultsNavData.nav
 
-    expect(results).toBeTruthy()
-    expect(results.delta).toBe(BigInt(delta))
-    expect(results.percentageChange as number).toBe(0.1 - minPercentageChange)
-    expect(results.txResults).toBeTruthy()
-    expect(results.code).toBe(
+    expect(newResults).toBeTruthy()
+    expect(newResults.delta).toBe(BigInt(delta))
+    expect(newResults.percentageChange as number).toBe(0.1 - minPercentageChange)
+    expect(newResults.txResults).toBeTruthy()
+    expect(newResults.code).toBe(
       MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
     )
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual('singleton')
-    expect(postData?.previousContractWriteTimeStamp).toEqual(results.txResults?.txTimestamp)
+    expect(postData?.previousContractWriteTimeStamp).toEqual(newResults.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
 
@@ -196,36 +196,40 @@ describe('FractalityPnlReporter - NON KMS', () => {
     const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
     const profitInvestors = delta - profitPerformanceFee
 
-    expect(results.profitEntry).toBeTruthy()
-    expect(results.profitEntry?.profitTotal).toBe(delta)
-    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
+    expect(newResults.profitEntry).toBeTruthy()
+    expect(newResults.profitEntry?.profitTotal).toBe(delta)
+    expect(newResults.profitEntry?.profitInvestors).toBe(profitInvestors)
+    expect(newResults.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold and percenrage change are not breached, no write to the contract', async () => {
     const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
 
-    const prevNavData = await percentageChangeTriggerTest(minPercentageChange)
+    const previousTestResultsNavData = await percentageChangeTriggerTest(minPercentageChange)
 
     const timeDeltaSecs = 1
 
-    const newNavData = createNewNavData(prevNavData, minPercentageChange - 0.1, timeDeltaSecs) //neither percentage change nor time threshold are breached
+    const newNavData = createNewNavData(
+      previousTestResultsNavData,
+      minPercentageChange - 0.1,
+      timeDeltaSecs
+    ) //neither percentage change nor time threshold are breached
 
     console.log('sleeping for ', timeDeltaSecs, ' seconds to match blockchain time')
     await sleep(timeDeltaSecs)
 
     const preData = await getPnlReporterData()
 
-    const results = await pnlReporter.mainService(newNavData)
-    console.log('results: ', results)
+    const newResults = await pnlReporter.mainService(newNavData)
+    console.log('results: ', newResults)
 
-    expect(results).toBeTruthy()
-    expect(results.delta).toBe(newNavData.nav - prevNavData.nav)
+    expect(newResults).toBeTruthy()
+    expect(newResults.delta).toBe(newNavData.nav - previousTestResultsNavData.nav)
 
-    expect(results.percentageChange as number).toBe(minPercentageChange - 0.1)
-    expect(results.txResults).toBeNull()
-    expect(results.code).toBe(MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE)
-    expect(results.profitEntry).toBeNull()
+    expect(newResults.percentageChange as number).toBe(minPercentageChange - 0.1)
+    expect(newResults.txResults).toBeNull()
+    expect(newResults.code).toBe(MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE)
+    expect(newResults.profitEntry).toBeNull()
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual(preData?.id)
@@ -277,6 +281,16 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
     expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
 
-    return newNavData
+    const postVaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
+
+    expect(postVaultAssets).toBe(vaultAssets + profitInvestors)
+    expect(postVaultAssets).toBe(newNavData.nav - profitPerformanceFee)
+
+    return {
+      nav: postVaultAssets,
+      timestamp: results.txResults?.txTimestamp
+        ? results.txResults?.txTimestamp
+        : newNavData.timestamp
+    } as NavDataFromApiScaled
   }
 })

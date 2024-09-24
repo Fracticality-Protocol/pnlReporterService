@@ -4,7 +4,7 @@ locals {
   api_key        = var.environment == "main" ? data.aws_secretsmanager_secret_version.endpoint.secret_string : data.aws_secretsmanager_secret_version.test_endpoint.secret_string
 
   percentage_trigger_change      = 0.25
-  performance_fee_percentage     = 0.2
+  performance_fee_percentage     = 20
   time_period_for_contract_write = 600
   operation_mode                 = "PUSH"
   key_mode                       = "KMS"

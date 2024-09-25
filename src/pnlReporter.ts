@@ -9,7 +9,8 @@ import {
   updatePnlReporterData,
   getPnlReporterData,
   PnlReporterData,
-  initializeDatabaseConnection
+  initializeDatabaseConnection,
+  insertProfitEntry
 } from './database'
 import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
@@ -31,11 +32,18 @@ interface BlockchainConnection {
   assetDecimals: BigInt
 }
 
+export interface ProfitEntry {
+  profitTotal: bigint
+  profitInvestors: bigint
+  profitPerformanceFee: bigint
+}
+
 export enum MainServiceJobResultsCode {
   DELTA_ZERO_NO_WRITE = 'delta is zero - not writing to contract',
   PERCENTAGE_CHANGE_THRESHOLD_REACHED = 'percentage change threshold reached - writing to contract',
   TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE = 'time since last contract write threshold reached - writing to contract',
-  NO_TRIGGER_NO_WRITE = 'delta is not zero, percentage change threshold not reached, and time since last contract write threshold not reached'
+  NO_TRIGGER_NO_WRITE = 'delta is not zero, percentage change threshold not reached, and time since last contract write threshold not reached',
+  HALTED_NO_WRITE = 'vault halted - not writing to contract'
 }
 
 export interface MainServiceJobResults {
@@ -43,6 +51,7 @@ export interface MainServiceJobResults {
   percentageChange: number
   txResults: WriteToContractResults | null
   code: string
+  profitEntry: ProfitEntry | null
 }
 
 export interface WriteToContractResults {
@@ -58,6 +67,7 @@ export class FractalityPnlReporter {
   VAULT_ADDRESS: string
   TIME_PERIOD_FOR_CONTRACT_WRITE: number //seconds
   PERCENTAGE_TRIGGER_CHANGE: number
+  PERFORMANCE_FEE_PERCENTAGE: number
   FRACTALITY_V2_VAULT_ABI: ethers.InterfaceAbi
 
   #PRIVATE_KEY?: string
@@ -86,7 +96,7 @@ export class FractalityPnlReporter {
     this.FRACTALITY_V2_VAULT_ABI = _FRACTALITY_V2_VAULT_ABI
     this.OPERATION_MODE = _OPERATION_MODE
     this.KEY_MODE = _KEY_MODE
-
+    this.PERFORMANCE_FEE_PERCENTAGE = _ENV.PERFORMANCE_FEE_PERCENTAGE
     console.info('Running in ', this.OPERATION_MODE, ' mode')
     console.info('Using ', this.KEY_MODE, ' key management mode')
 
@@ -176,6 +186,7 @@ export class FractalityPnlReporter {
     const decimals = this.blockchainConnection.assetDecimals
 
     let scaledNavData: NavDataFromApiScaled | null = null
+    let profitEntry: ProfitEntry | null = null
     if (typeof newNavData.nav === 'number') {
       scaledNavData = {
         nav: ethers.parseUnits(newNavData.nav.toString(), decimals.valueOf()),
@@ -202,33 +213,40 @@ export class FractalityPnlReporter {
 
     let txResults: WriteToContractResults | null = null
 
-    if (delta.toString() === '0') {
-      code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
-      console.log(code)
+    const isHalted = await this.blockchainConnection.contract.halted();
+    if (isHalted) {
+      code = MainServiceJobResultsCode.HALTED_NO_WRITE
     } else {
-      let shouldUpdateContract: boolean = false
-
-      if (Math.abs(percentageChange) >= this.PERCENTAGE_TRIGGER_CHANGE) {
-        code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
-        shouldUpdateContract = true
+      if (delta.toString() === '0') {
+        code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
+        console.log(code)
       } else {
-        const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
-        console.log('time since last contract write', timeSinceLastContractWrite)
-        if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
-          code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
+        let shouldUpdateContract: boolean = false
+
+        if (Math.abs(percentageChange) >= this.PERCENTAGE_TRIGGER_CHANGE) {
+          code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
           shouldUpdateContract = true
+        } else {
+          const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
+          console.log('time since last contract write', timeSinceLastContractWrite)
+          if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
+            code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
+            shouldUpdateContract = true
+          }
+        }
+
+        if (shouldUpdateContract) {
+          profitEntry = await this._performProfitEntry(delta)
+          console.log('profit entry', profitEntry)
+          txResults = await this._writeToContract(profitEntry.profitInvestors)
+          txTimestamp = txResults.txTimestamp
+          console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
+
+        } else {
+          code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }
       }
-
-      if (shouldUpdateContract) {
-        txResults = await this._writeToContract(delta)
-        txTimestamp = txResults.txTimestamp
-        console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-      } else {
-        code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
-      }
     }
-
     //update the pnlReporterData with every single time, even if no transaction took place.
     //which scenarios are this this? Not enough time has passed, or percentage change is not reached.
     //Note: the newNavData written here might have truncation, need to update schema to store as bigint
@@ -239,7 +257,8 @@ export class FractalityPnlReporter {
       delta: delta,
       percentageChange: percentageChange,
       txResults: txResults,
-      code: code
+      code: code,
+      profitEntry: profitEntry
     } as MainServiceJobResults
     console.log('Main Service results: ', results)
     return results
@@ -339,6 +358,24 @@ export class FractalityPnlReporter {
     const assetDecimals = await assetContract.decimals()
 
     return { contract, signer, provider, assetDecimals: assetDecimals }
+  }
+
+  _performProfitEntry = async (profitTotal: bigint): Promise<ProfitEntry> => {
+    const performanceFeePercentageDecimal = this.PERFORMANCE_FEE_PERCENTAGE / 100
+    //note: the perfomance fee can truncte to zero if the profit total is too small. Investor would get the full amount if the
+    //perfomance fee turns out to be less than 1 wei.
+    const profitPerformanceFee = BigInt(
+      Math.floor(Number(profitTotal) * performanceFeePercentageDecimal)
+    )
+    const profitInvestors = profitTotal - profitPerformanceFee
+
+    await insertProfitEntry(profitTotal, profitInvestors, profitPerformanceFee)
+    console.log('profit entry performed')
+    return {
+      profitTotal: profitTotal,
+      profitInvestors: profitInvestors,
+      profitPerformanceFee: profitPerformanceFee
+    }
   }
 
   _drawLogo = () => {

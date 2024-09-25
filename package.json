@@ -17,6 +17,7 @@
     "@types/aws-lambda": "^8.10.145",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.0",
+    "@types/uuid": "^10.0.0",
     "archiver": "^7.0.1",
     "dotenv-cli": "^7.4.2",
     "jest": "^29.7.0",
@@ -40,6 +41,7 @@
     "ethers": "^6.13.2",
     "postgres": "^3.4.4",
     "utf-8-validate": "^6.0.4",
+    "uuid": "^10.0.0",
     "zod": "^3.23.8"
   }
 }

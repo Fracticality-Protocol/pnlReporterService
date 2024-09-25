@@ -42,7 +42,8 @@ export enum MainServiceJobResultsCode {
   DELTA_ZERO_NO_WRITE = 'delta is zero - not writing to contract',
   PERCENTAGE_CHANGE_THRESHOLD_REACHED = 'percentage change threshold reached - writing to contract',
   TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE = 'time since last contract write threshold reached - writing to contract',
-  NO_TRIGGER_NO_WRITE = 'delta is not zero, percentage change threshold not reached, and time since last contract write threshold not reached'
+  NO_TRIGGER_NO_WRITE = 'delta is not zero, percentage change threshold not reached, and time since last contract write threshold not reached',
+  HALTED_NO_WRITE = 'vault halted - not writing to contract'
 }
 
 export interface MainServiceJobResults {
@@ -212,36 +213,40 @@ export class FractalityPnlReporter {
 
     let txResults: WriteToContractResults | null = null
 
-    if (delta.toString() === '0') {
-      code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
-      console.log(code)
+    const isHalted = await this.blockchainConnection.contract.halted();
+    if (isHalted) {
+      code = MainServiceJobResultsCode.HALTED_NO_WRITE
     } else {
-      let shouldUpdateContract: boolean = false
-
-      if (Math.abs(percentageChange) >= this.PERCENTAGE_TRIGGER_CHANGE) {
-        code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
-        shouldUpdateContract = true
+      if (delta.toString() === '0') {
+        code = MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE
+        console.log(code)
       } else {
-        const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
-        console.log('time since last contract write', timeSinceLastContractWrite)
-        if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
-          code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
+        let shouldUpdateContract: boolean = false
+
+        if (Math.abs(percentageChange) >= this.PERCENTAGE_TRIGGER_CHANGE) {
+          code = MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED
           shouldUpdateContract = true
+        } else {
+          const timeSinceLastContractWrite = Math.floor(Date.now() / 1000) - txTimestamp
+          console.log('time since last contract write', timeSinceLastContractWrite)
+          if (timeSinceLastContractWrite > this.TIME_PERIOD_FOR_CONTRACT_WRITE) {
+            code = MainServiceJobResultsCode.TIME_SINCE_LAST_CONTRACT_WRITE_THRESHOLD_REACHED_WRITE
+            shouldUpdateContract = true
+          }
+        }
+
+        if (shouldUpdateContract) {
+          profitEntry = await this._performProfitEntry(delta)
+          console.log('profit entry', profitEntry)
+          txResults = await this._writeToContract(profitEntry.profitInvestors)
+          txTimestamp = txResults.txTimestamp
+          console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
+
+        } else {
+          code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }
       }
-
-      if (shouldUpdateContract) {
-        profitEntry = await this._performProfitEntry(delta)
-        console.log('profit entry', profitEntry)
-        txResults = await this._writeToContract(profitEntry.profitInvestors)
-        txTimestamp = txResults.txTimestamp
-        console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-
-      } else {
-        code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
-      }
     }
-
     //update the pnlReporterData with every single time, even if no transaction took place.
     //which scenarios are this this? Not enough time has passed, or percentage change is not reached.
     //Note: the newNavData written here might have truncation, need to update schema to store as bigint

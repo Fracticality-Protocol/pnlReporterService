@@ -13,7 +13,7 @@ on:
 jobs:
   deploy:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2204
     strategy:
       matrix:
         node-version: [18.x]

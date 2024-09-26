@@ -52,6 +52,7 @@ export interface MainServiceJobResults {
   txResults: WriteToContractResults | null
   code: string
   profitEntry: ProfitEntry | null
+  highWaterMark: bigint
 }
 
 export interface WriteToContractResults {
@@ -187,6 +188,7 @@ export class FractalityPnlReporter {
 
     let scaledNavData: NavDataFromApiScaled | null = null
     let profitEntry: ProfitEntry | null = null
+
     if (typeof newNavData.nav === 'number') {
       scaledNavData = {
         nav: ethers.parseUnits(newNavData.nav.toString(), decimals.valueOf()),
@@ -195,9 +197,14 @@ export class FractalityPnlReporter {
     } else {
       scaledNavData = newNavData as NavDataFromApiScaled //already passed in scaled.
     }
+
     const pnlReporterData = await getPnlReporterData()
     const vaultAssets = await this._getVaultAssets()
+    let highWaterMark = BigInt(pnlReporterData?.highWaterMark || vaultAssets.toString()) // HWM not set use current vaultAssets
+
     console.log('current vaultAssets', vaultAssets)
+    console.log('current highWaterMark', highWaterMark)
+
     let txTimestamp = 0
 
     if (pnlReporterData) {
@@ -211,9 +218,12 @@ export class FractalityPnlReporter {
     const delta = this._calculateDelta(scaledNavData.nav, vaultAssets)
     console.log('delta', delta)
 
+    const profitAboveHWM = scaledNavData.nav - highWaterMark
+    console.log('profitAboveHWM', delta)
+
     let txResults: WriteToContractResults | null = null
 
-    const isHalted = await this.blockchainConnection.contract.halted();
+    const isHalted = await this.blockchainConnection.contract.halted()
     if (isHalted) {
       code = MainServiceJobResultsCode.HALTED_NO_WRITE
     } else {
@@ -236,12 +246,30 @@ export class FractalityPnlReporter {
         }
 
         if (shouldUpdateContract) {
-          profitEntry = await this._performProfitEntry(delta)
-          console.log('profit entry', profitEntry)
-          txResults = await this._writeToContract(profitEntry.profitInvestors)
-          txTimestamp = txResults.txTimestamp
-          console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-
+          if (delta > BigInt(0)) {
+            if (profitAboveHWM > BigInt(0)) {
+              // Profit is above the HWM we can take fees
+              profitEntry = await this._performProfitEntry(profitAboveHWM)
+              highWaterMark = scaledNavData.nav - profitEntry.profitPerformanceFee
+              console.log('profit entry', profitEntry)
+              const profitInvestors = delta - profitEntry.profitPerformanceFee
+              txResults = await this._writeToContract(profitInvestors)
+              txTimestamp = txResults.txTimestamp
+              console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
+            } else {
+              // Profit but not above HWM update contract without fees
+              txResults = await this._writeToContract(delta)
+              txTimestamp = txResults.txTimestamp
+              console.log(`Updated vault assets without performance fees`)
+            }
+          } else if (delta < BigInt(0)) {
+            // Report the loss
+            txResults = await this._writeToContract(delta)
+            txTimestamp = txResults.txTimestamp
+            console.log(`Reported loss`)
+          } else {
+            code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
+          }
         } else {
           code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }
@@ -250,7 +278,12 @@ export class FractalityPnlReporter {
     //update the pnlReporterData with every single time, even if no transaction took place.
     //which scenarios are this this? Not enough time has passed, or percentage change is not reached.
     //Note: the newNavData written here might have truncation, need to update schema to store as bigint
-    await updatePnlReporterData(txTimestamp, newNavData.nav.toString(), newNavData.timestamp)
+    await updatePnlReporterData(
+      txTimestamp,
+      newNavData.nav.toString(),
+      newNavData.timestamp,
+      highWaterMark.toString()
+    )
     console.log('finished job')
 
     const results = {
@@ -258,7 +291,8 @@ export class FractalityPnlReporter {
       percentageChange: percentageChange,
       txResults: txResults,
       code: code,
-      profitEntry: profitEntry
+      profitEntry: profitEntry,
+      highWaterMark: highWaterMark
     } as MainServiceJobResults
     console.log('Main Service results: ', results)
     return results
@@ -360,19 +394,17 @@ export class FractalityPnlReporter {
     return { contract, signer, provider, assetDecimals: assetDecimals }
   }
 
-  _performProfitEntry = async (profitTotal: bigint): Promise<ProfitEntry> => {
+  _performProfitEntry = async (profitAboveHWM: bigint): Promise<ProfitEntry> => {
     const performanceFeePercentageDecimal = this.PERFORMANCE_FEE_PERCENTAGE / 100
-    //note: the perfomance fee can truncte to zero if the profit total is too small. Investor would get the full amount if the
-    //perfomance fee turns out to be less than 1 wei.
     const profitPerformanceFee = BigInt(
-      Math.floor(Number(profitTotal) * performanceFeePercentageDecimal)
+      Math.floor(Number(profitAboveHWM) * performanceFeePercentageDecimal)
     )
-    const profitInvestors = profitTotal - profitPerformanceFee
+    const profitInvestors = profitAboveHWM - profitPerformanceFee
 
-    await insertProfitEntry(profitTotal, profitInvestors, profitPerformanceFee)
+    await insertProfitEntry(profitAboveHWM, profitInvestors, profitPerformanceFee)
     console.log('profit entry performed')
     return {
-      profitTotal: profitTotal,
+      profitTotal: profitAboveHWM,
       profitInvestors: profitInvestors,
       profitPerformanceFee: profitPerformanceFee
     }

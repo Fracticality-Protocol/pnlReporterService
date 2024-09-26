@@ -34,10 +34,10 @@ function createNewNavData(
   const newNavTimeStamp: number = previousPnlReporterData.timestamp + desiredTimeDeltaSecs
 
   // Convert percentage to a factor (e.g., 0.25% becomes 1.0025)
-  const factor = BigInt(Math.round((1 + desiredPercentageChange / 100) * 1e6))
+  const factor = BigInt(Math.round((1 + desiredPercentageChange / 100) * 1e18))
 
   // Calculate new NAV
-  const newNav = (previousPnlReporterData.nav * factor) / BigInt(1e6)
+  const newNav = (previousPnlReporterData.nav * factor) / BigInt(1e18)
 
   return {
     nav: newNav,
@@ -101,7 +101,7 @@ describe('FractalityPnlReporter - NON KMS', () => {
 
   test('percentage change (positive) triggers a write to the contract', async () => {
     const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
-    await updatePnlReporterData(Math.floor(Date.now() / 1000), '0', 0) //fake that there just was a write
+    await updatePnlReporterData(Math.floor(Date.now() / 1000), '0', 0, null) //fake that there just was a write
     await percentageChangeTriggerTest(minPercentageChange)
   })
 
@@ -121,7 +121,7 @@ describe('FractalityPnlReporter - NON KMS', () => {
     //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
     const newNavData = createNewNavData(
       previousTestResultsNavData,
-      minPercentageChange - 0.1, //not enoguh to trigger the percentage change
+      minPercentageChange - 0.1, //not enough to trigger the percentage change
       minTimePeriodForContractWrite
     )
 
@@ -131,7 +131,9 @@ describe('FractalityPnlReporter - NON KMS', () => {
     const newResults = await pnlReporter.mainService(newNavData)
     console.log('results: ', newResults)
 
-    const delta = newNavData.nav - previousTestResultsNavData.nav
+    // This needs to account for fees
+    const delta = newNavData.nav - previousTestResultsNavData.highWaterMark
+
     expect(newResults).toBeTruthy()
     expect(newResults.delta).toBe(delta)
     expect(newResults.percentageChange as number).toBe(minPercentageChange - 0.1)
@@ -192,17 +194,11 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
 
-    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
-    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
-    const profitInvestors = delta - profitPerformanceFee
-
-    expect(newResults.profitEntry).toBeTruthy()
-    expect(newResults.profitEntry?.profitTotal).toBe(delta)
-    expect(newResults.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(newResults.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
+    // With HWM no fees are taken
+    expect(newResults.profitEntry).toBe(null)
   })
 
-  test('time threshhold and percenrage change are not breached, no write to the contract', async () => {
+  test('time threshhold and percentage change are not breached, no write to the contract', async () => {
     const minPercentageChange = parseFloat(process.env.PERCENTAGE_TRIGGER_CHANGE as string)
 
     const previousTestResultsNavData = await percentageChangeTriggerTest(minPercentageChange)
@@ -240,29 +236,193 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
   })
 
-  async function percentageChangeTriggerTest(percentageChange: number) {
+  test('HWM logic is correctly applied in profit calculations', async () => {
     await pnlReporter.initialize()
-    const vaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
-    console.log('vaultAssets', vaultAssets)
+
+    const minTimePeriodForContractWrite = parseFloat(
+      process.env.TIME_PERIOD_FOR_CONTRACT_WRITE as string
+    )
+
+    const initialVaultAssets = await pnlReporter.blockchainConnection?.contract.vaultAssets()
+    console.log('Initial vaultAssets', initialVaultAssets)
 
     const initialNavData: NavDataFromApiScaled = {
-      nav: vaultAssets,
-      timestamp: Math.floor(new Date().getTime() / 1000)
+      nav: initialVaultAssets,
+      timestamp: Math.floor(Date.now() / 1000)
     }
 
-    console.log('percentageChange', percentageChange)
-    //this is the first initial write, 1 seconds after the initialization, due to the min percentage being breached
-    const newNavData = createNewNavData(initialNavData, percentageChange, 1)
+    // First Iteration: Simulate profit
+    // Everything should be normal here, reportProfit based on delta, take 20% fee of profit over HWM
+    const percentageIncrease1 = 5
+    const newNavData1 = createNewNavData(initialNavData, percentageIncrease1, 1)
 
-    console.log('newNavData', newNavData)
+    let results = await pnlReporter.mainService(newNavData1)
+
+    expect(results).toBeTruthy()
+    expect(results.delta).toBe(newNavData1.nav - initialNavData.nav)
+    expect(results.percentageChange).toBeCloseTo(percentageIncrease1, 2)
+    expect(results.txResults).toBeTruthy()
+    expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
+
+    // HWM should equal initialNavData + delta - performanceFee
+    const initialHighWaterMark =
+      initialNavData.nav +
+      (newNavData1.nav - initialNavData.nav) -
+      results.profitEntry?.profitPerformanceFee!
+
+    expect(results.highWaterMark).toBe(initialHighWaterMark)
+
+    // Calculate profitAboveHWM which in the first case will equal the delta
+    const profitAboveHWM1 = results.delta
+    const performanceFeePercentageDecimal1 =
+      parseFloat(process.env.PERFORMANCE_FEE_PERCENTAGE!) / 100
+    const profitPerformanceFee1 = BigInt(
+      Math.floor(Number(profitAboveHWM1) * performanceFeePercentageDecimal1)
+    )
+    // const profitInvestors = profitAboveHWM1 - profitPerformanceFee1
+
+    // Once the process is run again the NAV will be equal to the last processed NAV - performance fees
+    const expectedNewNav1 = newNavData1.nav - profitPerformanceFee1
+    expect(await pnlReporter.blockchainConnection?.contract.vaultAssets()).toBe(expectedNewNav1)
+
+    // Second Iteration: Simulate loss
+    // This is where the NAV decreases vaultAssets but does not take fees, but also does not change the HWM
+    await sleep(minTimePeriodForContractWrite + 1)
+
+    const percentageDecrease = -3
+    const newNavData2 = createNewNavData(
+      { nav: expectedNewNav1, timestamp: Math.floor(Date.now() / 1000) },
+      percentageDecrease,
+      1
+    )
+
+    results = await pnlReporter.mainService(newNavData2)
+
+    expect(results).toBeTruthy()
+    expect(results.delta).toBe(newNavData2.nav - expectedNewNav1) // Delta will equal to latest nav - (previous nav - previous fees)
+    expect(results.percentageChange).toBeCloseTo(percentageDecrease, 2)
+    expect(results.txResults).toBeTruthy()
+    expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
+    expect(results.profitEntry).toBe(null) // Not profits saved in loss event
+    expect(results.highWaterMark).toBe(initialHighWaterMark) // HWM should remain unchanged
+
+    // The next expected NAV should be the same as there will be no additional offsets made
+    const expectedNewNav2 = newNavData2.nav
+    expect(await pnlReporter.blockchainConnection?.contract.vaultAssets()).toBe(expectedNewNav2)
+
+    // Third Iteration: Simulate NAV returning to the HWM but not exceeding it
+    // We need to reportProfit to contract but take no other actions
+    await sleep(minTimePeriodForContractWrite + 1)
+
+    const percentageIncrease2 = 3
+    const newNavData3 = createNewNavData(
+      { nav: expectedNewNav2, timestamp: Math.floor(Date.now() / 1000) },
+      percentageIncrease2,
+      1
+    )
+
+    results = await pnlReporter.mainService(newNavData3)
+
+    // NOTE: No performance fee should be taken since NAV hasn't exceeded HWM
+    expect(results).toBeTruthy()
+    expect(results.delta).toBe(newNavData3.nav - expectedNewNav2)
+    expect(results.percentageChange).toBeCloseTo(percentageIncrease2, 2)
+    expect(results.txResults).toBeTruthy()
+    expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
+    expect(results.profitEntry).toBe(null) // Not profits taken despite the profit up to the HWM
+
+    // The next expected NAV should be the same as there will be no additional offsets made despite the profit
+    const expectedNewNav3 = newNavData3.nav
+    expect(await pnlReporter.blockchainConnection?.contract.vaultAssets()).toBe(expectedNewNav3)
+
+    // Fourth Iteration: Simulate zero NAV activity to check for feedback loops
+    // If vault assets are in sync there will be nothing done in this event
+    await sleep(minTimePeriodForContractWrite + 1)
+
+    const expectedNewNav4 = expectedNewNav3 // No activity
+
+    results = await pnlReporter.mainService({
+      nav: expectedNewNav4,
+      timestamp: Math.floor(Date.now() / 1000)
+    })
+
+    // NOTE: No performance fee should be taken since NAV hasn't exceeded HWM
+    expect(results).toBeTruthy()
+    expect(results.delta).toBe(BigInt(0))
+    expect(results.percentageChange).toBeCloseTo(0, 2)
+    expect(results.txResults).toBeFalsy()
+    expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE)
+    expect(results.profitEntry).toBe(null)
+
+    // Fifth Iteration: NAV recovers to profit higher than HWM
+    // We should resume taking fees and reporting as usual
+    await sleep(minTimePeriodForContractWrite + 1)
+
+    const percentageIncrease3 = 2
+    const newNavData5 = createNewNavData(
+      {
+        nav: expectedNewNav4,
+        timestamp: Math.floor(Date.now() / 1000)
+      },
+      percentageIncrease3,
+      1
+    )
+
+    results = await pnlReporter.mainService(newNavData5)
+
+    expect(results).toBeTruthy()
+
+    expect(results.delta).toBe(newNavData5.nav - expectedNewNav4)
+    expect(results.percentageChange).toBeCloseTo(percentageIncrease3, 2)
+    expect(results.txResults).toBeTruthy()
+    expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
+
+    // Calculate the new profitAboveHWM and performance fees
+    const profitAboveHWM2 = newNavData5.nav - initialHighWaterMark
+
+    const performanceFeePercentageDecimal =
+      parseFloat(process.env.PERFORMANCE_FEE_PERCENTAGE!) / 100
+
+    const profitPerformanceFee2 = BigInt(
+      Math.floor(Number(profitAboveHWM2) * performanceFeePercentageDecimal)
+    )
+    const profitInvestors2 = profitAboveHWM2 - profitPerformanceFee2
+
+    expect(results.profitEntry).toBeTruthy()
+    expect(results.profitEntry?.profitTotal).toBe(profitAboveHWM2)
+    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors2)
+    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee2)
+
+    const newHighWaterMark = newNavData5.nav - profitPerformanceFee2
+    expect(results.highWaterMark).toBe(newHighWaterMark)
+
+    const expectedNewNav5 = newNavData5.nav - profitPerformanceFee2
+    expect(await pnlReporter.blockchainConnection?.contract.vaultAssets()).toBe(expectedNewNav5)
+  }, 1000000)
+
+  async function percentageChangeTriggerTest(percentageChange: number) {
+    await pnlReporter.initialize()
+    let vaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
+    console.log('Initial vaultAssets', vaultAssets.toString())
+
+    // First run these values are the same
+    let highWaterMark: bigint = vaultAssets
+    let previousNav: bigint = vaultAssets
+
+    const newNavData = createNewNavData(
+      { nav: previousNav, timestamp: Math.floor(Date.now() / 1000) },
+      percentageChange,
+      1
+    )
+    console.log('New NAV Data:', newNavData)
 
     const results = await pnlReporter.mainService(newNavData)
 
-    const delta = newNavData.nav - vaultAssets
+    const delta = newNavData.nav - previousNav
 
     expect(results).toBeTruthy()
     expect(results.delta).toBe(delta)
-    expect(results.percentageChange as number).toBe(percentageChange)
+    expect(results.percentageChange as number).toBeCloseTo(percentageChange, 2)
     expect(results.txResults).toBeTruthy()
     expect(results.code).toBe(MainServiceJobResultsCode.PERCENTAGE_CHANGE_THRESHOLD_REACHED)
 
@@ -272,25 +432,47 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
 
-    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
-    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
-    const profitInvestors = delta - profitPerformanceFee
+    const profitAboveHWM = newNavData.nav - highWaterMark
 
-    expect(results.profitEntry).toBeTruthy()
-    expect(results.profitEntry?.profitTotal).toBe(delta)
-    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
+    let amountToAddToVaultAssets: bigint
+    let profitPerformanceFee = BigInt(0)
 
-    const postVaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
+    if (profitAboveHWM > BigInt(0)) {
+      // There is profit above HWM, calculate performance fees on profitAboveHWM
+      const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
+      profitPerformanceFee = BigInt(Math.floor(Number(profitAboveHWM) * performanceFeeDecimal))
+      const profitInvestors = delta - profitPerformanceFee
 
-    expect(postVaultAssets).toBe(vaultAssets + profitInvestors)
-    expect(postVaultAssets).toBe(newNavData.nav - profitPerformanceFee)
+      amountToAddToVaultAssets = delta - profitPerformanceFee
+
+      expect(results.profitEntry).toBeTruthy()
+      expect(results.profitEntry?.profitTotal).toBe(profitAboveHWM)
+      expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
+      expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
+
+      highWaterMark = newNavData.nav - profitPerformanceFee
+
+      expect(results.highWaterMark).toBe(highWaterMark)
+    } else {
+      // No profit above HWM, no performance fees
+      amountToAddToVaultAssets = delta
+      expect(results.profitEntry).toBeFalsy()
+
+      // HWM remains unchanged
+      expect(results.highWaterMark).toBe(highWaterMark)
+    }
+
+    vaultAssets = await pnlReporter.blockchainConnection?.contract.vaultAssets()
+    expect(vaultAssets).toBe(previousNav + amountToAddToVaultAssets)
+
+    // Adjust for fees taken
+    previousNav = newNavData.nav - profitPerformanceFee
 
     return {
-      nav: postVaultAssets,
-      timestamp: results.txResults?.txTimestamp
-        ? results.txResults?.txTimestamp
-        : newNavData.timestamp
-    } as NavDataFromApiScaled
+      nav: previousNav,
+      timestamp: results.txResults?.txTimestamp || newNavData.timestamp,
+      highWaterMark: highWaterMark,
+      vaultAssets: vaultAssets
+    }
   }
 })

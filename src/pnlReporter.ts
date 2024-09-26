@@ -117,23 +117,23 @@ export class FractalityPnlReporter {
 
   //TODO: test this with very large numbers that may overflow the number type.
   _calculatePercentageChange = async (
-    newNavData: NavDataFromApiScaled, //in decimals units
-    currentVaultAssets: bigint //in full decimals units
+    newNavData: NavDataFromApiScaled, //in decimal units
+    highWaterMark: bigint //in full decimal units
   ): Promise<number> => {
     if (!this.blockchainConnection) throw new Error('Blockchain connection not initialized')
     const decimals = await this.blockchainConnection.assetDecimals
-    const currentVaultAssetsInDecimals = parseFloat(
-      ethers.formatUnits(currentVaultAssets, decimals.valueOf())
+    const highWaterMarkInDecimals = parseFloat(
+      ethers.formatUnits(highWaterMark, decimals.valueOf())
     )
     const newNavDataInDecimals = parseFloat(ethers.formatUnits(newNavData.nav, decimals.valueOf()))
 
     const percentageChange =
-      ((newNavDataInDecimals - currentVaultAssetsInDecimals) / currentVaultAssetsInDecimals) * 100
+      ((newNavDataInDecimals - highWaterMarkInDecimals) / highWaterMarkInDecimals) * 100
     return Number(percentageChange.toFixed(2))
   }
 
-  _calculateDelta = (newNavData: bigint, currentVaultAssets: bigint): bigint => {
-    return newNavData - currentVaultAssets
+  _calculateDelta = (newNavData: bigint, highWaterMark: bigint): bigint => {
+    return newNavData - highWaterMark
   }
 
   _writeToContract = async (delta: bigint): Promise<WriteToContractResults> => {
@@ -149,7 +149,11 @@ export class FractalityPnlReporter {
         -delta, //absolute value of delta
         'pnlReporterService'
       )
+    } else {
+      // Handle edgecase where delta is zero
+      throw new Error('Delta is zero, no action taken')
     }
+
     const receipt = await tx.wait()
 
     console.log('tx hash', receipt.hash)
@@ -212,14 +216,14 @@ export class FractalityPnlReporter {
     }
 
     //calculate the percentage change and delta
-    const percentageChange = await this._calculatePercentageChange(scaledNavData, vaultAssets)
+    const percentageChange = await this._calculatePercentageChange(scaledNavData, highWaterMark)
     console.log('percentage change', percentageChange)
 
-    const delta = this._calculateDelta(scaledNavData.nav, vaultAssets)
+    const delta = this._calculateDelta(scaledNavData.nav, highWaterMark)
     console.log('delta', delta)
 
-    const profitAboveHWM = scaledNavData.nav - highWaterMark
-    console.log('profitAboveHWM', delta)
+    const profitAboveHWM = delta > BigInt(0) ? delta : BigInt(0)
+    console.log('profitAboveHWM', profitAboveHWM)
 
     let txResults: WriteToContractResults | null = null
 
@@ -261,6 +265,10 @@ export class FractalityPnlReporter {
               txResults = await this._writeToContract(delta)
               txTimestamp = txResults.txTimestamp
               console.log(`Updated vault assets without performance fees`)
+              // Update HWM in scenario where NAV is greater
+              if (scaledNavData.nav > highWaterMark) {
+                highWaterMark = scaledNavData.nav
+              }
             }
           } else if (delta < BigInt(0)) {
             // Report the loss

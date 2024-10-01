@@ -283,8 +283,15 @@ describe('FractalityPnlReporter - NON KMS', () => {
 
     const postVaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
 
-    expect(postVaultAssets).toBe(vaultAssets + profitInvestors)
-    expect(postVaultAssets).toBe(newNavData.nav - profitPerformanceFee)
+    if (delta > BigInt(0)) {
+      // delta is positive we only need to commit the investor share
+      expect(postVaultAssets).toBe(vaultAssets + profitInvestors)
+      expect(postVaultAssets).toBe(newNavData.nav - profitPerformanceFee)
+    } else {
+      // delta is negative we  need to reflect the full change
+      expect(postVaultAssets).toBe(vaultAssets + delta)
+      expect(postVaultAssets).toBe(newNavData.nav)
+    }
 
     return {
       nav: postVaultAssets,

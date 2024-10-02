@@ -213,7 +213,7 @@ export class FractalityPnlReporter {
 
     let txResults: WriteToContractResults | null = null
 
-    const isHalted = await this.blockchainConnection.contract.halted();
+    const isHalted = await this.blockchainConnection.contract.halted()
     if (isHalted) {
       code = MainServiceJobResultsCode.HALTED_NO_WRITE
     } else {
@@ -238,10 +238,11 @@ export class FractalityPnlReporter {
         if (shouldUpdateContract) {
           profitEntry = await this._performProfitEntry(delta)
           console.log('profit entry', profitEntry)
-          txResults = await this._writeToContract(profitEntry.profitInvestors)
+          txResults = await this._writeToContract(
+            delta > BigInt(0) ? profitEntry.profitInvestors : delta // If delta is negative reportLoss with full delta
+          )
           txTimestamp = txResults.txTimestamp
           console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-
         } else {
           code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }

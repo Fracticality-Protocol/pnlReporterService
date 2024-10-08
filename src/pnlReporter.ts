@@ -5,13 +5,7 @@ import { type AxiosInstance } from 'axios'
 import { CronJob } from 'cron'
 import axiosRetry from 'axios-retry'
 
-import {
-  updatePnlReporterData,
-  getPnlReporterData,
-  PnlReporterData,
-  initializeDatabaseConnection,
-  insertProfitEntry
-} from './database'
+import { updatePnlReporterData, getPnlReporterData, initializeDatabaseConnection } from './database'
 import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
 

@@ -240,7 +240,6 @@ export class FractalityPnlReporter {
           txResults = await this._writeToContract(delta)
           txTimestamp = txResults.txTimestamp
           console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-
         } else {
           code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }

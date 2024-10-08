@@ -90,8 +90,6 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(results.txResults).toBeNull()
     expect(results.code).toBe(MainServiceJobResultsCode.DELTA_ZERO_NO_WRITE)
 
-    expect(results.profitEntry).toBeNull()
-
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual('singleton')
     expect(postData?.previousContractWriteTimeStamp).toEqual(0)
@@ -145,15 +143,6 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousContractWriteTimeStamp).toEqual(newResults.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
-
-    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
-    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
-    const profitInvestors = delta - profitPerformanceFee
-
-    expect(newResults.profitEntry).toBeTruthy()
-    expect(newResults.profitEntry?.profitTotal).toBe(delta)
-    expect(newResults.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(newResults.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold change triggers a write to the contract (negative)', async () => {
@@ -191,15 +180,6 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousContractWriteTimeStamp).toEqual(newResults.txResults?.txTimestamp)
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
-
-    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
-    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
-    const profitInvestors = delta - profitPerformanceFee
-
-    expect(newResults.profitEntry).toBeTruthy()
-    expect(newResults.profitEntry?.profitTotal).toBe(delta)
-    expect(newResults.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(newResults.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
   })
 
   test('time threshhold and percenrage change are not breached, no write to the contract', async () => {
@@ -229,7 +209,6 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(newResults.percentageChange as number).toBe(minPercentageChange - 0.1)
     expect(newResults.txResults).toBeNull()
     expect(newResults.code).toBe(MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE)
-    expect(newResults.profitEntry).toBeNull()
 
     const postData = await getPnlReporterData()
     expect(postData?.id).toEqual(preData?.id)
@@ -272,26 +251,10 @@ describe('FractalityPnlReporter - NON KMS', () => {
     expect(postData?.previousProcessedNav).toEqual(newNavData.nav.toString())
     expect(postData?.previousProcessedNavTimeStamp).toEqual(newNavData.timestamp)
 
-    const performanceFeeDecimal = (pnlReporter.PERFORMANCE_FEE_PERCENTAGE / 100) as number
-    const profitPerformanceFee = BigInt(Math.floor(Number(delta) * performanceFeeDecimal))
-    const profitInvestors = delta - profitPerformanceFee
-
-    expect(results.profitEntry).toBeTruthy()
-    expect(results.profitEntry?.profitTotal).toBe(delta)
-    expect(results.profitEntry?.profitInvestors).toBe(profitInvestors)
-    expect(results.profitEntry?.profitPerformanceFee).toBe(profitPerformanceFee)
-
     const postVaultAssets: bigint = await pnlReporter.blockchainConnection?.contract.vaultAssets()
 
-    if (delta > BigInt(0)) {
-      // delta is positive we only need to commit the investor share
-      expect(postVaultAssets).toBe(vaultAssets + profitInvestors)
-      expect(postVaultAssets).toBe(newNavData.nav - profitPerformanceFee)
-    } else {
-      // delta is negative we  need to reflect the full change
-      expect(postVaultAssets).toBe(vaultAssets + delta)
-      expect(postVaultAssets).toBe(newNavData.nav)
-    }
+    expect(postVaultAssets).toBe(vaultAssets + delta)
+    expect(postVaultAssets).toBe(newNavData.nav)
 
     return {
       nav: postVaultAssets,

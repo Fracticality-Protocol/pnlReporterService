@@ -4,7 +4,7 @@ const fs = require('fs')
 
 class ZipPlugin {
   apply(compiler) {
-    compiler.hooks.done.tapAsync('ZipPlugin', (stats, callback) => {
+    compiler.hooks.afterEmit.tapAsync('ZipPlugin', (compilation, callback) => {
       const outputPath = path.join(__dirname, 'dist')
       const outputFilePath = path.join(outputPath, 'bundle.zip')
 
@@ -17,7 +17,7 @@ class ZipPlugin {
       const archive = archiver('zip', { zlib: { level: 9 } })
 
       output.on('close', () => {
-        console.log(`lambda.zip has been created (${archive.pointer()} total bytes)`)
+        console.log(`bundle.zip has been created (${archive.pointer()} total bytes)`)
         callback()
       })
 

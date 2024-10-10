@@ -5,13 +5,7 @@ import { type AxiosInstance } from 'axios'
 import { CronJob } from 'cron'
 import axiosRetry from 'axios-retry'
 
-import {
-  updatePnlReporterData,
-  getPnlReporterData,
-  PnlReporterData,
-  initializeDatabaseConnection,
-  insertProfitEntry
-} from './database'
+import { updatePnlReporterData, getPnlReporterData, initializeDatabaseConnection } from './database'
 import { type ReporterEnv } from './env'
 import { KeyMode, OperationMode } from './modes'
 
@@ -213,7 +207,7 @@ export class FractalityPnlReporter {
 
     let txResults: WriteToContractResults | null = null
 
-    const isHalted = await this.blockchainConnection.contract.halted();
+    const isHalted = await this.blockchainConnection.contract.halted()
     if (isHalted) {
       code = MainServiceJobResultsCode.HALTED_NO_WRITE
     } else {
@@ -236,12 +230,10 @@ export class FractalityPnlReporter {
         }
 
         if (shouldUpdateContract) {
-          profitEntry = await this._performProfitEntry(delta)
           console.log('profit entry', profitEntry)
-          txResults = await this._writeToContract(profitEntry.profitInvestors)
+          txResults = await this._writeToContract(delta)
           txTimestamp = txResults.txTimestamp
           console.log(`Trigger to write latency ${newNavData.timestamp - txTimestamp} sec`)
-
         } else {
           code = MainServiceJobResultsCode.NO_TRIGGER_NO_WRITE
         }
@@ -360,6 +352,8 @@ export class FractalityPnlReporter {
     return { contract, signer, provider, assetDecimals: assetDecimals }
   }
 
+  //Deprecated
+  /*
   _performProfitEntry = async (profitTotal: bigint): Promise<ProfitEntry> => {
     const performanceFeePercentageDecimal = this.PERFORMANCE_FEE_PERCENTAGE / 100
     //note: the perfomance fee can truncte to zero if the profit total is too small. Investor would get the full amount if the
@@ -377,6 +371,7 @@ export class FractalityPnlReporter {
       profitPerformanceFee: profitPerformanceFee
     }
   }
+  */
 
   _drawLogo = () => {
     console.log(`

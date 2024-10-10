@@ -33,7 +33,7 @@
     "@cuonghx.gu-tech/ethers-aws-kms-signer": "^0.9.1",
     "@types/axios": "^0.14.0",
     "@types/cron": "^2.4.0",
-    "axios": "^1.7.5",
+    "axios": "^1.7.7",
     "axios-retry": "^4.5.0",
     "bufferutil": "^4.0.8",
     "cron": "^3.1.7",

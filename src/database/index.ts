@@ -1,7 +1,6 @@
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { eq } from 'drizzle-orm'
-import { v4 as uuidv4 } from 'uuid'
 
 import * as schema from './schema'
 
@@ -16,7 +15,10 @@ export async function initializeDatabaseConnection(): Promise<PostgresJsDatabase
     //local defaults for a local db instance
     console.log('connected to local database')
     connection = postgres({
-      database: process.env.DB_NAME
+      database: process.env.DB_NAME,
+      port: Number(process.env.DB_PORT || 5432),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD
     })
   } else {
     console.log('connected to ', process.env.DB_HOST)
@@ -83,27 +85,4 @@ export const getPnlReporterData = async () => {
     throw new Error('Database not initialized')
   }
   return db.query.pnlReporterData.findFirst()
-}
-
-export const insertProfitEntry = async (
-  profitTotal: bigint,
-  profitInvestors: bigint,
-  profitPerformanceFee: bigint
-) => {
-  if (!db) {
-    db = await initializeDatabaseConnection()
-  }
-  try {
-    const newId = uuidv4()
-    await db.insert(schema.profitEntries).values({
-      id: newId,
-      timestamp: new Date(),
-      profitTotal: profitTotal.toString(),
-      profitInvestors: profitInvestors.toString(),
-      profitPerformanceFee: profitPerformanceFee.toString(),
-      performanceFeeWithdrawn: false
-    })
-  } catch (error) {
-    console.error('Error inserting profit entry', error)
-  }
 }

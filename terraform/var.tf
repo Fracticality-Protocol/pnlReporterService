@@ -24,19 +24,7 @@ variable "project_version" {
   type = string
 }
 
-variable "db_name" {
-  type = string
-}
-
 variable "db_instance_id" {
-  type = string
-}
-
-variable "rpc_url" {
-  type = string
-}
-
-variable "vault_address" {
   type = string
 }
 

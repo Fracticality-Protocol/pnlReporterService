@@ -10,6 +10,32 @@ locals {
   key_mode                       = "KMS"
 }
 
+resource "aws_security_group" "lambda_sg" {
+  name        = "${var.name}-lambda-sg-${var.environment}"
+  description = "Security group for Lambda functions"
+  vpc_id      = "vpc-08ae44a5cd755d8b0"
+
+  ingress {
+    description     = "Allow Lambda to access RDS on port 5432"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = ["sg-03117204f06e38ba8"]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.name}-lambda-sg"
+  }
+}
+
 resource "aws_lambda_function" "default" {
   function_name    = var.name
   handler          = "index.handler"
@@ -21,12 +47,12 @@ resource "aws_lambda_function" "default" {
 
   environment {
     variables = {
-      RPC_URL                        = var.rpc_url
-      VAULT_ADDRESS                  = var.vault_address
+      RPC_URL                        = data.aws_ssm_parameter.mainnet_rpc_url.value
+      VAULT_ADDRESS                  = data.aws_ssm_parameter.mainnet_vault_address.value
       DB_USER                        = local.db_username
       DB_PASSWORD                    = local.db_password
       DB_HOST                        = data.aws_db_instance.db.address
-      DB_NAME                        = var.db_name
+      DB_NAME                        = "fractality"
       DB_SCHEMA                      = local.db_schema
       GET_NAV_URL                    = var.fund_db_nav_endpoint
       API_KEY                        = local.api_key
@@ -37,6 +63,11 @@ resource "aws_lambda_function" "default" {
       OPERATION_MODE                 = local.operation_mode
       KEY_MODE                       = local.key_mode
     }
+  }
+
+  vpc_config {
+    subnet_ids         = ["subnet-05fe54f7cba0f2fd5", "subnet-07452d48590bce532"]
+    security_group_ids = [aws_security_group.lambda_sg.id]
   }
 }
 
@@ -49,6 +80,11 @@ resource "aws_iam_role" "default" {
 resource "aws_iam_role_policy_attachment" "lambda_policy" {
   role       = aws_iam_role.default.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
+  role       = aws_iam_role.default.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_iam_role_policy_attachment" "kms_policy" {

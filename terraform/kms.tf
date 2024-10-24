@@ -1,5 +1,5 @@
 data "aws_kms_key" "testnet" {
-  key_id = "alias/TEST_PNL_REPORTER"
+  key_id = "alias/PNL_REPORTER_TEST"
 }
 
 data "aws_kms_key" "mainnet" {

@@ -1,5 +1,5 @@
 data "aws_secretsmanager_secret" "db" {
-  name = "FUND_DATA_DB"
+  name = "FRACTALITY_DB"
 }
 
 data "aws_secretsmanager_secret_version" "db" {

@@ -1,3 +1,3 @@
-bucket = "fracticality-backend-terraform"
+bucket = "fractality-backend-terraform"
 key    = "pnl-reporter-service/mainnet.tfstate"
 region = "ap-southeast-1"

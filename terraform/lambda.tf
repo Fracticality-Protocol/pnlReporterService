@@ -47,8 +47,8 @@ resource "aws_lambda_function" "default" {
 
   environment {
     variables = {
-      RPC_URL                        = aws_ssm_parameter.mainnet_rpc_url.value
-      VAULT_ADDRESS                  = aws_ssm_parameter.mainnet_vault_address.value
+      RPC_URL                        = data.aws_ssm_parameter.mainnet_rpc_url.value
+      VAULT_ADDRESS                  = data.aws_ssm_parameter.mainnet_vault_address.value
       DB_USER                        = local.db_username
       DB_PASSWORD                    = local.db_password
       DB_HOST                        = data.aws_db_instance.db.address

@@ -21,7 +21,7 @@ data "aws_secretsmanager_secret_version" "endpoint" {
 }
 
 data "aws_secretsmanager_secret" "test_endpoint" {
-  name = "BERACHAIN_FUND_DATA_INTERNAL_KEY_TEST"
+  name = "FUND_DATA_INTERNAL_KEY_TEST"
 }
 
 data "aws_secretsmanager_secret_version" "test_endpoint" {

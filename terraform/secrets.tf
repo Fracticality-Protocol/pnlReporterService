@@ -1,5 +1,5 @@
 data "aws_secretsmanager_secret" "db" {
-  name = "FRACTALITY_DB"
+  name = "BERACHAIN_FRACTALITY_DB"
 }
 
 data "aws_secretsmanager_secret_version" "db" {
@@ -13,7 +13,7 @@ locals {
 }
 
 data "aws_secretsmanager_secret" "endpoint" {
-  name = "FUND_DATA_INTERNAL_KEY"
+  name = "BERACHAIN_FUND_DATA_INTERNAL_KEY"
 }
 
 data "aws_secretsmanager_secret_version" "endpoint" {
@@ -21,7 +21,7 @@ data "aws_secretsmanager_secret_version" "endpoint" {
 }
 
 data "aws_secretsmanager_secret" "test_endpoint" {
-  name = "FUND_DATA_INTERNAL_KEY_TEST"
+  name = "BERACHAIN_FUND_DATA_INTERNAL_KEY_TEST"
 }
 
 data "aws_secretsmanager_secret_version" "test_endpoint" {

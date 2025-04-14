@@ -1,0 +1,68 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - beraborrow
+  pull_request:
+    branches:
+      - beraborrow
+
+jobs:
+  deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/beraborrow')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+    environment: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+
+    env:
+      DESTINATION_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Version
+        if: github.ref == 'refs/heads/beraborrow'
+        run: echo "PROJECT_VERSION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config="environments/${{ github.ref_name }}.backend.tfvars"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        working-directory: ./terraform
+
+      - name: Terraform Deploy
+        run: |
+          terraform apply -auto-approve \
+            -var-file="environments/beraborrow.tfvars" \
+            -var="account_id=${{ vars.AWS_ACCOUNT_ID }}" \
+            -var="region=${{ vars.AWS_REGION }}" \
+            -var="project_version=${{ env.PROJECT_VERSION }}" \
+            -var="fund_db_nav_endpoint=${{ vars.BERACHAIN_FUND_DB_NAV_ENDPOINT }}" \
+            -var="db_instance_id=${{ vars.BERACHAIN_DB_INSTANCE_ID }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        working-directory: ./terraform

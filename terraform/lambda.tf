@@ -13,14 +13,14 @@ locals {
 resource "aws_security_group" "lambda_sg" {
   name        = "${var.name}-lambda-sg-${var.environment}"
   description = "Security group for Lambda functions"
-  vpc_id      = "vpc-08ae44a5cd755d8b0"
+  vpc_id      = "vpc-0eabf012a01efb51d"
 
   ingress {
     description     = "Allow Lambda to access RDS on port 5432"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = ["sg-03117204f06e38ba8"]
+    security_groups = ["sg-0c8a2012c31fea6a0"]
   }
 
   egress {
@@ -66,7 +66,7 @@ resource "aws_lambda_function" "default" {
   }
 
   vpc_config {
-    subnet_ids         = ["subnet-05fe54f7cba0f2fd5", "subnet-07452d48590bce532"]
+    subnet_ids         = ["subnet-030947fbb1246ca3b", "subnet-00df9051cf4a7219d"]
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 }
